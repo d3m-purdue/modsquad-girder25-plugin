@@ -1,0 +1,7 @@
+{
+    "name": "modsquad-girder25",
+    "description": "provides backend functionality with girder2.5 for Modsquad's React interface",
+    "url": "http://github.com/d3m-purdue/",
+    "version": "0.5.0",
+    "dependencies": []
+}
