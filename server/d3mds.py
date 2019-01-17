@@ -22,7 +22,7 @@ class D3MDataset:
 
 		# read the schema in dsHome
 		_dsDoc = os.path.join(self.dsHome, 'datasetDoc.json')
-                assert os.path.exists(_dsDoc)
+		assert os.path.exists(_dsDoc)
 		with open(_dsDoc, 'r') as f:
 			self.dsDoc = json.load(f)
 
@@ -200,15 +200,14 @@ class D3MProblem:
 		# locate the splitsFile
 		self.splitsFile = self._get_datasplits_file()
 
-        def get_taskType(self):
-            return self.prDoc['about']['taskType']
+	def get_taskType(self):
+		return self.prDoc['about']['taskType']
 
-        def get_taskSubType(self):
-        	#print "problem spec:",self.prDoc
-        	if 'taskSubType' in self.prDoc['about']:
-        		return self.prDoc['about']['taskSubType']
-        	else:
-        		return ''
+	def get_taskSubType(self):
+		if 'taskSubType' in self.prDoc['about']:
+			return self.prDoc['about']['taskSubType']
+		else:
+			return ''
 
 	def get_problemID(self):
 		"""

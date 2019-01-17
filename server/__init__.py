@@ -7,7 +7,20 @@ from girder.api.describe import Description
 from girder.api.describe import autoDescribeRoute
 from girder.api.rest import Resource
 from girder.exceptions import RestException
+import json
+from . import d3mds
+import copy
 
+# for the TA2/TA3 api
+import grpc
+from google.protobuf.json_format import MessageToJson
+from google.protobuf.json_format import Parse
+from . import pipeline_pb2
+from . import problem_pb2
+from . import value_pb2
+from . import primitive_pb2
+from . import core_pb2
+from . import core_pb2_grpc
 
 class Modsquad(Resource):
     def __init__(self):
@@ -26,8 +39,8 @@ class Modsquad(Resource):
         # Pipelines.
         self.route('GET', ('pipeline', 'results'), self.getResults)
         self.route('POST', ('pipeline',), self.createPipeline)
-        self.route('POST', ('pipeline', 'export'), self.executePipeline)
-        self.route('POST', ('pipeline', 'results'), self.exportPipeline)
+        self.route('POST', ('pipeline', 'execute'), self.executePipeline)
+        self.route('POST', ('pipeline', 'export'), self.exportPipeline)
 
         # Stop process.
         self.route('POST', ('stop',), self.stopProcess)
@@ -79,6 +92,23 @@ class Modsquad(Resource):
 
         return config
 
+
+    def returnNumberIfConvertible(self,value):
+      try:
+        num = float(value)
+        return num
+      except ValueError:
+        return value
+
+    # look through an array of dictionaries and convert any numeric strings
+    # (e.g. "245") to their numeric equivalient 
+    def convertNumberStringsToNumeric(self,data):
+      for row in data:
+        for key in row.keys():
+          row[key] = self.returnNumberIfConvertible(row[key])
+      return data
+
+
     @access.public
     @autoDescribeRoute(
         Description('Foobar')
@@ -89,10 +119,12 @@ class Modsquad(Resource):
         datasupply = d3mds.D3MDS(dataset_schema_path,problem_schema_path)
         # fill nan with zeros, or should it be empty strings?
         data_as_df = datasupply.get_data_all().fillna('')
-        list_of_dicts = copy.deepcopy(data_as_df.T.to_dict().values())
-        #print 'train data excerpt: ',list_of_dicts
-        #print 'end of data'
-        return list_of_dicts
+        #list_of_dicts = data_as_df.T.to_dict()
+        list_of_dicts = [data_as_df.iloc[line,:].T.to_dict() for line in range(len(data_as_df))]
+
+        # need a persistent allocated copy for the front end to use?
+        copy_of_data = copy.deepcopy(list_of_dicts)
+        return self.convertNumberStringsToNumeric(copy_of_data)
 
     @access.public
     @autoDescribeRoute(
@@ -140,12 +172,159 @@ class Modsquad(Resource):
 
         return problems
 
+    def get_stub(self):
+        server_channel_address = os.environ.get('TA2_SERVER_CONN')
+        # complain in the return if we didn't get an address to connect to
+        if server_channel_address is None:
+            logger.error('no TA2 server details to use for connection')
+            return {'error': 'TA2_SERVER_CONN environment variable is not set!'}
+        channel = grpc.insecure_channel(server_channel_address)
+        stub = core_pb2_grpc.CoreStub(channel)
+        return stub
+
+
+    def metricLookup(self,metricString, task_type):
+      # classification metrics
+      if (metricString == 'accuracy'):
+        print('accuracy metric')
+        return problem_pb2.ACCURACY
+      if (metricString == 'f1'):
+        print('f1 metric')
+        return problem_pb2.F1
+      if (metricString == 'f1Macro'):
+        print('f1-macro metric')
+        return problem_pb2.F1_MACRO
+      if (metricString == 'f1Micro'):
+        print('f1-micro metric')
+        return problem_pb2.F1_MICRO
+      if (metricString == 'ROC_AUC'):
+        print('roc-auc metric')
+        return problem_pb2.ROC_AUC
+      if (metricString == 'rocAuc'):
+        print('rocAuc metric')
+        return problem_pb2.ROC_AUC
+      if (metricString == 'rocAucMicro'):
+        print('roc-auc-micro metric')
+        return problem_pb2.ROC_AUC_MICRO
+      if (metricString == 'rocAucMacro'):
+        print('roc-auc-macro metric')
+        return problem_pb2.ROC_AUC_MACRO
+      # clustering
+      if (metricString == 'normalizedMutualInformation'):
+        print('normalized mutual information metric')
+        return problem_pb2.NORMALIZED_MUTUAL_INFORMATION
+      if (metricString == 'jaccardSimilarityScore'):
+        print('jaccard similarity metric')
+        return problem_pb2.JACCARD_SIMILARITY_SCORE
+      # regression
+      if (metricString == 'meanSquaredError'):
+        print('MSE metric')
+        return problem_pb2.MEAN_SQUARED_ERROR
+      if (metricString == 'rootMeanSquaredError'):
+        print('RMSE metric')
+        return problem_pb2.ROOT_MEAN_SQUARED_ERROR
+      if (metricString == 'rootMeanSquaredErrorAvg'):
+        print('RMSE Average metric')
+        return problem_pb2.ROOT_MEAN_SQUARED_ERROR_AVG
+      if (metricString == 'rSquared'):
+        print('rSquared metric')
+        return problem_pb2.R_SQUARED
+      if (metricString == 'meanAbsoluteError'):
+        print('meanAbsoluteError metric')
+        return problem_pb2.MEAN_ABSOLUTE_ERROR
+      # we don't recognize the metric, assign a value to the unknown metric according to the task type.
+      else:
+        print('undefined metric received, so assigning a metric according to the task type')
+        if task_type==problem_pb2.CLASSIFICATION:
+          print('classification: assigning f1Macro')
+          return problem_pb2.F1_MACRO
+        elif task_type==problem_pb2.CLUSTERING:
+          print('clustering: assigning normalized mutual information')
+          return problem_pb2.NORMALIZED_MUTUAL_INFORMATION
+        else:
+          print('regression: assigning RMSE')
+          return problem_pb2.ROOT_MEAN_SQUARED_ERROR
+
+    def make_target(self,spec):
+        return problem_pb2.ProblemTarget(
+                target_index = spec['targetIndex'],
+                resource_id = spec['resID'],
+                column_index = spec['colIndex'],
+                column_name = spec['colName'])
+
+    def taskTypeLookup(self,task):
+      if (task=='classification'):
+        print('detected classification task')
+        return problem_pb2.CLASSIFICATION
+      elif (task == 'clustering'):
+        print('detected clustering task')
+        return problem_pb2.CLUSTERING
+      elif (task == 'objectDetection'):
+        print('detected object detection task')
+        return problem_pb2.OBJECT_DETECTION
+      else:
+        print('assuming regression')
+        return problem_pb2.REGRESSION
+
+    def subTaskLookup(self,sub):
+      if (sub == 'multiClass'):
+        print('multiClass subtype')
+        return problem_pb2.MULTICLASS
+      if (sub == 'multivariate'):
+        return problem_pb2.MULTIVARIATE
+      if (sub == 'univariate'):
+        return problem_pb2.UNIVARIATE
+      else:
+        print('assuming NONE subtask')
+        return problem_pb2.NONE
+
+
+    # process the spec file and generate a new one with any inactive variables not included
+    def generate_modified_database_spec(self,original,modified,inactive):
+      # read the schema in dsHome
+      _dsDoc = os.path.join(original, 'datasetDoc.json')
+      assert os.path.exists(_dsDoc)
+      with open(_dsDoc, 'r') as f:
+        dsDoc = json.load(f)
+        outDoc = {}
+        outDoc['about'] = dsDoc['about']
+        # loop through the resources and add them to the output spec if the feature is not inactive
+        outDoc['dataResources'] = []
+        for resource in dsDoc['dataResources']:
+          # We moved only the dataset spec, update the paths to have an absolute path to the
+          # original content
+          resource['resPath'] = os.path.join(original, resource['resPath'])
+          # pass things besides tables through automatically. tables have a list of features
+          if resource['resType'] != 'table':
+            outDoc['dataResources'].append(resource)
+          else:
+            # if it is a table, copy the header information, but clear out the column names and only
+            # add columns that are not listed in the inactive list.  Inactive entries won't be added. 
+            resourceOut = copy.deepcopy(resource)
+            resourceOut['columns'] = []
+            for column in resource['columns']:
+              if column['colName'] not in inactive:
+                # pass this feature record to the output columns 
+                resourceOut['columns'].append(column)
+            outDoc['dataResources'].append(resourceOut)
+        # now the updated dataset spec will be written out to the write-enabled new location
+        outFileName = os.path.join(modified, 'datasetDoc.json')
+        assert os.path.exists(_dsDoc)
+        with open(outFileName,'w') as outfile:
+          json.dump(outDoc, outfile)
+
+    # TA2 has written the results of a pipeline execution out to a file in a location
+    # not readable by the modsquad front-end.  Read it here and return the file contents
+    # as the result of the ajax call.
+
     @access.public
     @autoDescribeRoute(
         Description('Foobar')
     )
-    def getResults(self):
-        print 'copying pipelineURI:',resultURI
+    def getResults(self,params):
+        self.requireParams('resultURI', params)
+        resultURI = params['resultURI']
+        print('copying pipelineURI:',resultURI)
         if resultURI is None:
             raise RestException('no resultURI for executed pipeline', code=500)
 
@@ -159,12 +338,23 @@ class Modsquad(Resource):
           f.close()
           return content
 
+
     @access.public
     @autoDescribeRoute(
         Description('Foobar')
     )
-    def createPipeline(self):
-      stub = get_stub()
+    def createPipeline(self,params):
+      self.requireParams('data_uri', params)
+      self.requireParams('inactive', params)
+
+      data_uri = params['data_uri']
+      inactive = params['inactive']
+      if 'time_limit' not in params:
+        time_limit=1
+      else:
+        time_limit = params['time_limit']
+
+      stub = self.get_stub()
 
       problem_schema_path = os.environ.get('PROBLEM_ROOT')
       problem_supply = d3mds.D3MProblem(problem_schema_path)
@@ -176,9 +366,9 @@ class Modsquad(Resource):
       # and load from the modified spec
 
       if inactive != None:
-        print 'detected inactive variables:', inactive
+        print('detected inactive variables:', inactive)
         modified_dataset_schema_path = '/output/supporting_files'
-        generate_modified_database_spec(dataset_schema_path,modified_dataset_schema_path, inactive)
+        self.generate_modified_database_spec(dataset_schema_path,modified_dataset_schema_path, inactive)
         dataset_supply = d3mds.D3MDataset(modified_dataset_schema_path)
       else:
         dataset_supply = d3mds.D3MDataset(dataset_schema_path)
@@ -213,9 +403,9 @@ class Modsquad(Resource):
         version = problem_supply.get_problemSchemaVersion(),
         name = 'modsquad_problem',
         description = 'modsquad problem',
-        task_type = taskTypeLookup(problem_supply.get_taskType()),
-        task_subtype = subTaskLookup(problem_supply.get_taskSubType()),
-        performance_metrics = map(lambda x: problem_pb2.ProblemPerformanceMetric(metric=metricLookup(x['metric'], problem_supply.get_taskType())), problem_supply.get_performance_metrics()))
+        task_type = self.taskTypeLookup(problem_supply.get_taskType()),
+        task_subtype = self.subTaskLookup(problem_supply.get_taskSubType()),
+        performance_metrics = map(lambda x: problem_pb2.ProblemPerformanceMetric(metric=self.metricLookup(x['metric'], problem_supply.get_taskType())), problem_supply.get_performance_metrics()))
 
       value = value_pb2.Value(dataset_uri=data_uri)
       req = core_pb2.SearchSolutionsRequest(
@@ -227,30 +417,43 @@ class Modsquad(Resource):
                   problem=problem,
                   inputs=[problem_pb2.ProblemInput(
                       dataset_id=dataset_supply.get_datasetID(),
-                      targets=map(make_target, problem_supply.get_targets()))]),
+                      targets=map(self.make_target, problem_supply.get_targets()))]),
               inputs=[value])
+      #logger.info('about to make searchSolutions request')
+      logger.info("sending search solutions request:",MessageToJson(req))
       resp = stub.SearchSolutions(req)
-      print 'set time bound to be: ',time_limit,' minutes'
-      print 'using hard-coded version 2018.7.7 of the API. Should pull from the proto files instead'
+      #logger.info('after searchSolutionsRequest')
+      print('set time bound to be: ',time_limit,' minutes')
+      print('using hard-coded version 2018.7.7 of the API. Should pull from the proto files instead')
 
       # return map(lambda x: json.loads(MessageToJson(x)), resp)
       search_id = json.loads(MessageToJson(resp))['searchId']
+      logger.info('after received search solutions answer')
 
       # Get actual pipelines.
       req = core_pb2.GetSearchSolutionsResultsRequest(search_id=search_id)
+      #logger.info('sent search solutions results request')
       results = stub.GetSearchSolutionsResults(req)
+      #logger.info('after received get solutions results')
       results = map(lambda x: json.loads(MessageToJson(x)), results)
 
       stub.StopSearchSolutions(core_pb2.StopSearchSolutionsRequest(search_id=search_id))
-
       return results
+
+
+  
 
     @access.public
     @autoDescribeRoute(
         Description('Foobar')
     )
-    def executePipeline(self):
-        stub = get_stub()
+    def executePipeline(self,params):
+        self.requireParams('pipeline', params)
+        self.requireParams('data_uri', params)
+        pipeline = params['pipeline']
+        data_uri = params['data_uri']
+        
+        stub = self.get_stub()
 
         # add file descriptor if it is missing. some systems might be inconsistent, but file:// is the standard
         if data_uri[0:4] != 'file':
@@ -259,12 +462,12 @@ class Modsquad(Resource):
         # context_in = cpb.SessionContext(session_id=context)
 
         input = value_pb2.Value(dataset_uri=data_uri)
-        request_in = cpb.FitSolutionRequest(solution_id=pipeline,
+        request_in = core_pb2.FitSolutionRequest(solution_id=pipeline,
                                             inputs=[input])
         resp = stub.FitSolution(request_in)
 
         resp = json.loads(MessageToJson(resp))
-        pprint.pprint(resp)
+        #pprint.pprint(resp)
 
         fittedPipes = stub.GetFitSolutionResults(core_pb2.GetFitSolutionResultsRequest(request_id=resp['requestId']))
         # print list(fittedPipes)
@@ -274,8 +477,8 @@ class Modsquad(Resource):
 
         fittedPipes = list(fittedPipes)
         # map(pprint.pprint, fittedPipes)
-        print 'fitted pipes:'
-        map(lambda x: pprint.pprint(MessageToJson(x)), fittedPipes)
+        #print('fitted pipes:')
+        #map(lambda x: pprint.pprint(MessageToJson(x)), fittedPipes)
 
         pipes = []
         for f in fittedPipes:
@@ -284,7 +487,7 @@ class Modsquad(Resource):
             pipes.append(json.loads(MessageToJson(f)))
 
         fitted_solution_id = map(lambda x: x['fittedSolutionId'],filter(lambda x: x['progress']['state'] == 'COMPLETED', pipes))
-        print 'fitted_solution_id', fitted_solution_id
+        print('fitted_solution_id', fitted_solution_id)
 
         executedPipes = map(lambda x: stub.ProduceSolution(core_pb2.ProduceSolutionRequest(
             fitted_solution_id=x['fittedSolutionId'],
@@ -303,7 +506,6 @@ class Modsquad(Resource):
             for rr in r:
                 #pprint.pprint(rr)
                 #pprint.pprint(MessageToJson(rr))
-
                 exposed.append(json.loads(MessageToJson(rr)))
 
         exposed = filter(lambda x: x['progress']['state'] == 'COMPLETED', exposed)
@@ -315,13 +517,15 @@ class Modsquad(Resource):
         return {'exposed': exposed, 'fitted_solution_id':fitted_solution_id}
         # magic saved here: return [{exposed: v[0], fitted_id: v[1]} for v in zip(exposed, fitted_solution_id)]
 
+
+
     @access.public
     @autoDescribeRoute(
         Description('Foobar')
     )
     def exportPipeline(self):
         global globalNextRankToUse
-        stub = get_stub()
+        stub = self.get_stub()
 
         # if there was a rank input to this call, use that rank, otherwise
         # increment a global ranked value each time this method is called.
@@ -334,13 +538,13 @@ class Modsquad(Resource):
           # increment the global counter so the next use will have a higher rank
           globalNextRankToUse += 1
 
-        request_in = cpb.SolutionExportRequest(fitted_solution_id=pipeline,
+        request_in = core_pb2.SolutionExportRequest(fitted_solution_id=pipeline,
                                             rank=int(rankToOutput))
 
-        print 'requesting solution export:', request_in
+        print('requesting solution export:', request_in)
         resp = stub.SolutionExport(request_in)
-
         return json.loads(MessageToJson(resp))
+
 
     @access.public
     @autoDescribeRoute(
@@ -350,8 +554,5 @@ class Modsquad(Resource):
         return {'foo': 'bar'}
 
 
-class GirderPlugin(plugin.GirderPlugin):
-    DISPLAY_NAME = 'Modsquad'
-
-    def load(self, info):
-        info['apiRoot'].modsquad = Modsquad()
+def load(info):
+    info['apiRoot'].modsquad = Modsquad()
