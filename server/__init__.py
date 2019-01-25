@@ -42,11 +42,11 @@ class Modsquad(Resource):
         self.route('GET', ('config',), self.getConfig)
 
         # Datasets.
-
         self.route('GET', ('dataset', 'data'), self.getDataset)
         self.route('GET', ('dataset', 'features'), self.getDatasetFeatures)
         self.route('GET', ('dataset', 'metadata'), self.getFeatureMetadata)
         self.route('GET', ('dataset', 'problems'), self.getProblems)
+
         # added Jan 2019
         self.route('GET', ('dataset', 'external_list'), self.getExternalDatasetList)
         self.route('GET', ('dataset', 'external_import'), self.getExternalFileContents)
@@ -560,7 +560,8 @@ class Modsquad(Resource):
     def getExternalDatasetList(self):
       fileIdList = []
       gc = girder_client.GirderClient(apiUrl=girder_api_prefix)
-      login = gc.authenticate('curtislisle', 'ArborRocks')
+      login = gc.authenticate('modsquad', 'd3md3m')
+      #login = gc.authenticate('admin', 'd3md3m')
       collectionlist = gc.sendRestRequest('GET','collection')
       for coll in collectionlist:
           # look in each collection for all folders
@@ -575,7 +576,10 @@ class Modsquad(Resource):
                       pass
                       #print('found filename:',file['name'], ' with ID:',file['_id'])
                       fileIdList.append(file)
-      return fileIdList
+      # return a single object that contains a list of all discovered datasets
+      retobj = {}
+      retobj['datasets'] = fileIdList
+      return retobj
 
     # this endpoint retrieves the contents of a file from girder, given a file Id (which 
     # is returned by the getExternalDatasetList method).  This assumes the file can be 
@@ -584,19 +588,23 @@ class Modsquad(Resource):
 
     @access.public
     @autoDescribeRoute(
-        Description('Retreive a list of potential datasets stored in a local girder instance.')
+        Description('Retreive and return the contents of a dataset stored in a local girder instance.')
          .param('fileId', 'the girder Id of the file to retrieve', required=True,paramType='query')
     )
     def getExternalFileContents(self,params):
       self.requireParams('fileId', params)
       fileId = params['fileId']
       requesturl = girder_api_prefix+"/file/"+fileId+"/download"
+      retobj = {}
+      retobj['data'] = ''
       try:
         resp = requests.get(requesturl)
         #print(resp.text)
-        return resp.text
+        retobj['data'] = resp.txt
+        return retobj
       except:
-        return None
+        # return an empty file if there was a problem with the read
+        return retobj
 
     # this endpoint combines two datasets together.  It takes arguments for the two
     # girder fileIds to use and the type of join to perform. This doesn't currently authenticate to
@@ -638,16 +646,18 @@ class Modsquad(Resource):
         data2_df = pd.read_csv(data_as_file2, sep=',')
 
         if join_type == 'rows':
-          print('join rows')
+          #print('join rows')
           result_df = pd.concat([data1_df,data2_df])
-          print(result_df.shape)
+          #print(result_df.shape)
           #result_as_list_of_dicts = result_df.to_dict('records')
+          # return as a csv string without the extra pandas index column
           return result_df.to_csv(sep=',',index=False)
         else:
-          print('join columns')
+          #print('join columns')
           #result_df = pd.concat([data1_df,data2_df],'axis'=1,'join_axes'=join_column,join='inner')
           result_df = pd.merge(data1_df, data2_df, how='inner', left_on=join_column, right_on=join_column)
-          print(result_df.shape)
+          #print(result_df.shape)
+          # return as a csv string without the extra pandas index column
           return result_df.to_csv(sep=',',index=False)
       except:
         print('error: a problem occurred receiving or merging datasets')
