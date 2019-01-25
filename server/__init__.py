@@ -11,6 +11,14 @@ import json
 from . import d3mds
 import copy
 
+# for the external girder dataset access
+import girder_client
+import requests
+import json
+from pandas.compat import StringIO
+import pandas as pd
+import requests
+
 # for the TA2/TA3 api
 import grpc
 from google.protobuf.json_format import MessageToJson
@@ -22,6 +30,9 @@ from . import primitive_pb2
 from . import core_pb2
 from . import core_pb2_grpc
 
+# girder address to read datasets from
+girder_api_prefix = 'http://localhost:8080/api/v1'
+
 class Modsquad(Resource):
     def __init__(self):
         super(Modsquad, self).__init__()
@@ -31,10 +42,15 @@ class Modsquad(Resource):
         self.route('GET', ('config',), self.getConfig)
 
         # Datasets.
+
         self.route('GET', ('dataset', 'data'), self.getDataset)
         self.route('GET', ('dataset', 'features'), self.getDatasetFeatures)
         self.route('GET', ('dataset', 'metadata'), self.getFeatureMetadata)
         self.route('GET', ('dataset', 'problems'), self.getProblems)
+        # added Jan 2019
+        self.route('GET', ('dataset', 'external_list'), self.getExternalDatasetList)
+        self.route('GET', ('dataset', 'external_import'), self.getExternalFileContents)
+        self.route('GET', ('dataset', 'merge'), self.pairwiseDatasetMerge)
 
         # Pipelines.
         self.route('GET', ('pipeline', 'results'), self.getResults)
@@ -319,7 +335,7 @@ class Modsquad(Resource):
 
     @access.public
     @autoDescribeRoute(
-        Description('Foobar')
+        Description('Read computation fit results and return them through the ajax call for use by a client or a user interface')
     )
     def getResults(self,params):
         self.requireParams('resultURI', params)
@@ -341,7 +357,7 @@ class Modsquad(Resource):
 
     @access.public
     @autoDescribeRoute(
-        Description('Foobar')
+        Description('Send a problem description to an external modeling engine. Ask it to prepare to fit models for this problem')
     )
     def createPipeline(self,params):
       self.requireParams('data_uri', params)
@@ -374,29 +390,7 @@ class Modsquad(Resource):
         dataset_supply = d3mds.D3MDataset(dataset_schema_path)
 
       # get the target features into the record format expected by the API
-      targets =  problem_supply.get_targets()
-      # features = []
-      # for entry in targets:
-        # tf = core_pb2.Feature(resource_id=entry['resID'],feature_name=entry['colName'])
-        # features.append(tf)
-
-      # we are having trouble parsing the problem specs into valid API specs, so just hardcode
-      # to certain problem types for now.  We could fix this with a more general lookup table to return valid API codes
-      # task = taskTypeLookup(task_type)
-      # tasksubtype = subTaskLookup(task_subtype)
-
-      # the metrics in the files are imprecise text versions of the enumerations, so just standardize.  A lookup table
-      # would help here, too
-      # metrics=[core_pb2.F1_MICRO, core_pb2.ROC_AUC, core_pb2.ROOT_MEAN_SQUARED_ERROR, core_pb2.F1, core_pb2.R_SQUARED]
-
-      # context_in = cpb.SessionContext(session_id=context)
-
-      # problem_pb = Parse(json.dumps(problem_supply.prDoc), problem_pb2.ProblemDescription(), ignore_unknown_fields=True)
-
-      # currently HTTP timeout occurs after 2 minutes (probably from , so clamp this value to 2 minutes temporarily)
-      #print 'clamping search time to 2 minutes to avoid timeouts'
-      #time_limit = min(2,int(time_limit))
-      
+      targets =  problem_supply.get_targets()  
 
       problem = problem_pb2.Problem(
         id = problem_supply.get_problemID(),
@@ -445,7 +439,7 @@ class Modsquad(Resource):
 
     @access.public
     @autoDescribeRoute(
-        Description('Foobar')
+        Description('This forces the modeling engine to fit a solution to provided data and returns the predictions.')
     )
     def executePipeline(self,params):
         self.requireParams('pipeline', params)
@@ -521,7 +515,7 @@ class Modsquad(Resource):
 
     @access.public
     @autoDescribeRoute(
-        Description('Foobar')
+        Description('Signalthe modeling engine to export solutions as readable/reviewable files')
     )
     def exportPipeline(self):
         global globalNextRankToUse
@@ -552,6 +546,112 @@ class Modsquad(Resource):
     )
     def stopProcess(self):
         return {'foo': 'bar'}
+
+    # this routine accesses an external girder interface and pulls out a list of all the 
+    # files that are attached to items stored by this instance.  It returns the name and
+    # girder Id for each file.  This information can be used to extract the file from girder.
+    # girder authentication as 'admin' is attempted.  If it fails, only public files will 
+    # be included in the returned list.
+
+    @access.public
+    @autoDescribeRoute(
+        Description('Retreive a list of potential datasets stored in a local girder instance.')
+    )
+    def getExternalDatasetList(self):
+      fileIdList = []
+      gc = girder_client.GirderClient(apiUrl=girder_api_prefix)
+      login = gc.authenticate('curtislisle', 'ArborRocks')
+      collectionlist = gc.sendRestRequest('GET','collection')
+      for coll in collectionlist:
+          # look in each collection for all folders
+          #print('looking in collection:',coll['name'])
+          folderlist = gc.sendRestRequest('GET','folder',{'parentType':'collection','parentId':coll['_id']})
+          for folder in folderlist:
+              #print('looking in folder')
+              itemlist = gc.sendRestRequest('GET','item',{'folderId':folder['_id']})
+              for item in itemlist:
+                  filelist = gc.sendRestRequest('GET','item/'+itemlist[0]['_id']+'/files')
+                  for file in filelist:
+                      pass
+                      #print('found filename:',file['name'], ' with ID:',file['_id'])
+                      fileIdList.append(file)
+      return fileIdList
+
+    # this endpoint retrieves the contents of a file from girder, given a file Id (which 
+    # is returned by the getExternalDatasetList method).  This assumes the file can be 
+    # transported through an HTTP text response.   This doesn't currently authenticate to
+    # girder, so publicly available files are assumed. 
+
+    @access.public
+    @autoDescribeRoute(
+        Description('Retreive a list of potential datasets stored in a local girder instance.')
+         .param('fileId', 'the girder Id of the file to retrieve', required=True,paramType='query')
+    )
+    def getExternalFileContents(self,params):
+      self.requireParams('fileId', params)
+      fileId = params['fileId']
+      requesturl = girder_api_prefix+"/file/"+fileId+"/download"
+      try:
+        resp = requests.get(requesturl)
+        #print(resp.text)
+        return resp.text
+      except:
+        return None
+
+    # this endpoint combines two datasets together.  It takes arguments for the two
+    # girder fileIds to use and the type of join to perform. This doesn't currently authenticate to
+    # girder, so publicly available files are assumed. 
+
+    @access.public
+    @autoDescribeRoute(
+        Description('Combine two datasets via combining columns or rows')
+         .param('fileId_1', 'the girder Id of the first file', required=True,paramType='query')
+         .param('fileId_2', 'the girder Id of the second file', required=True,paramType='query')
+         .param('join_type', 'specify either "rows" or "columns"', required=True,paramType='query')
+         .param('join_column', 'the name of the dataset column to use for a side-by-side join', required=False,paramType='query')
+ 
+    )
+    def pairwiseDatasetMerge(self,params):
+      self.requireParams('fileId_1', params)
+      self.requireParams('join_type', params)
+      self.requireParams('fileId_2', params)
+      fileId_1 = params['fileId_1']
+      fileId_2 = params['fileId_2']
+      join_type = params['join_type']
+
+      # set the value of the join column, default to d3mIndex if nothing specified
+      join_column = params['join_column'] if 'join_column' in params else 'd3mIndex'
+
+      # go get the datasets
+      requesturl_1 = girder_api_prefix+"/file/"+fileId_1+"/download"
+      requesturl_2 = girder_api_prefix+"/file/"+fileId_2+"/download"
+      try:
+        # read the data in from the external girder instance
+        resp_1 = requests.get(requesturl_1)
+        resp_2 = requests.get(requesturl_1)
+        data_1_str = resp_1.text
+        data_2_str = resp_2.text
+        # convert the two strings returned into lists of dictionaries
+        data_as_file1 = StringIO(data_1_str)
+        data_as_file2 = StringIO(data_2_str)
+        data1_df = pd.read_csv(data_as_file1, sep=',')
+        data2_df = pd.read_csv(data_as_file2, sep=',')
+
+        if join_type == 'rows':
+          print('join rows')
+          result_df = pd.concat([data1_df,data2_df])
+          print(result_df.shape)
+          #result_as_list_of_dicts = result_df.to_dict('records')
+          return result_df.to_csv(sep=',',index=False)
+        else:
+          print('join columns')
+          #result_df = pd.concat([data1_df,data2_df],'axis'=1,'join_axes'=join_column,join='inner')
+          result_df = pd.merge(data1_df, data2_df, how='inner', left_on=join_column, right_on=join_column)
+          print(result_df.shape)
+          return result_df.to_csv(sep=',',index=False)
+      except:
+        print('error: a problem occurred receiving or merging datasets')
+        return None
 
 
 def load(info):
