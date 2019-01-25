@@ -571,9 +571,8 @@ class Modsquad(Resource):
               #print('looking in folder')
               itemlist = gc.sendRestRequest('GET','item',{'folderId':folder['_id']})
               for item in itemlist:
-                  filelist = gc.sendRestRequest('GET','item/'+itemlist[0]['_id']+'/files')
+                  filelist = gc.sendRestRequest('GET','item/'+item['_id']+'/files')
                   for file in filelist:
-                      pass
                       #print('found filename:',file['name'], ' with ID:',file['_id'])
                       fileIdList.append(file)
       # return a single object that contains a list of all discovered datasets
