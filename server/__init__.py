@@ -49,7 +49,7 @@ class Modsquad(Resource):
 
         # added Jan 2019
         self.route('GET', ('dataset', 'external_list'), self.getExternalDatasetList)
-        self.route('GET', ('dataset', 'external_import'), self.getExternalFileContents)
+        self.route('GET', ('dataset', 'external_download'), self.getExternalFileContents)
         self.route('GET', ('dataset', 'merge'), self.pairwiseDatasetMerge)
 
         # Pipelines.
@@ -578,7 +578,7 @@ class Modsquad(Resource):
                       fileIdList.append(file)
       # return a single object that contains a list of all discovered datasets
       retobj = {}
-      retobj['datasets'] = fileIdList
+      retobj['data'] = fileIdList
       return retobj
 
     # this endpoint retrieves the contents of a file from girder, given a file Id (which 
@@ -600,7 +600,7 @@ class Modsquad(Resource):
       try:
         resp = requests.get(requesturl)
         #print(resp.text)
-        retobj['data'] = resp.txt
+        retobj['data'] = resp.text
         return retobj
       except:
         # return an empty file if there was a problem with the read
