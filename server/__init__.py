@@ -30,6 +30,11 @@ from . import primitive_pb2
 from . import core_pb2
 from . import core_pb2_grpc
 
+# for the data import
+import StringIO
+import pandas as pd
+import numpy as  np
+
 # girder address to read datasets from
 girder_api_prefix = 'http://localhost:8080/api/v1'
 
@@ -46,6 +51,9 @@ class Modsquad(Resource):
         self.route('GET', ('dataset', 'features'), self.getDatasetFeatures)
         self.route('GET', ('dataset', 'metadata'), self.getFeatureMetadata)
         self.route('GET', ('dataset', 'problems'), self.getProblems)
+
+        # upload from custom interfaces
+        self.route('POST', ('dataset', 'upload'), self.uploadDataset)
 
         # added Jan 2019
         self.route('GET', ('dataset', 'external_list'), self.getExternalDatasetList)
@@ -575,6 +583,10 @@ class Modsquad(Resource):
                   for file in filelist:
                       #print('found filename:',file['name'], ' with ID:',file['_id'])
                       fileIdList.append(file)
+      # Also report datasets stored in the dataManagerLite
+      for obj in listLiteDatasets():
+        fileIdList.append(obj)
+
       # return a single object that contains a list of all discovered datasets
       retobj = {}
       retobj['data'] = fileIdList
@@ -661,6 +673,67 @@ class Modsquad(Resource):
       except:
         print('error: a problem occurred receiving or merging datasets')
         return None
+
+
+    # this endpoint accepts a data object and saves it as a new
+    # dataset attached to a new item.  This is written as a simpler alternative
+    # to streaming to girder's file/chunk API.  a dataType argument is accepted
+    # to imply 
+
+    @access.public
+    @autoDescribeRoute(
+        Description('Accept a json object and write as a new local file. ')
+         .param('data', 'the object to be stored', required=True,paramType='query')
+         .param('name', 'the name of the object to be stored', required=True,paramType='query')
+         .param('dataType', 'geospatial, temporal, tabular, image', required=True, paramType='query')
+    )
+    def uploadDataset(self,params):
+      self.requireParams('data', params)
+      self.requireParams('dataType', params)
+      self.requireParams('name', params)
+      self.requireParams('size', params)
+      dataString = params['data']
+      dataType = params['dataType']
+     
+      if len(dataType)>0:
+        name = params['dataType']+'_'+params['name']
+      else:
+        name = params['name']
+
+      # convert the data to a CSV formatted string
+      data = json.loads(dataString)
+      #print(data)
+      fields = data['fields']
+      print('number of fields received:',len(fields))
+      dataArray = data['data']
+      print('number of elements received:',len(dataArray))
+      # pack the values into a dictionary and convert to a dataframe
+      dict_new = {}
+      for idx in range(len(fields)):
+        dict_new[fields[idx]] = np.transpose(dataArray)[idx]
+      data_df = pd.DataFrame(dict_new)
+      # now that we have a dataframe, clean out entries with 0 in lat or long
+      if dataType == 'geospatial_messages':
+        data_df = data_df.loc[data_df['pickup_longitude'] > 0.0]
+        data_df = data_df.loc[data_df['pickup_latitude'] > 0.0]
+        data_df = data_df.loc[data_df['dropoff_longitude'] > 0.0]
+        data_df = data_df.loc[data_df['dropoff_latitude'] > 0.0]
+      # now open girder connection and stream the dataframe as a CSV stream
+      # to create a CSV file item attached to a new girder item in the datasets/geospatial
+      # folder.  Each invocation creates a new item with the date in the name
+      gc = girder_client.GirderClient(apiUrl=girder_api_prefix)
+      login = gc.authenticate('modsquad', 'd3md3m')
+      dataString = data_df.to_csv()
+      stream = StringIO.StringIO(dataString)
+      datasize = len(dataString)
+      # get the folder ID for us to use
+      folderRecord = gc.resourceLookup('collection/datasets/geospatial')
+      folderID = folderRecord['_id']
+      print('got folder ID:',folderID)
+      resp = gc.uploadStreamToFolder(folderID, stream=stream, filename=name, size=datasize) 
+      return resp
+
+
 
 
 def load(info):
