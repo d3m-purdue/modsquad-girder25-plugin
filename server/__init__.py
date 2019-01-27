@@ -584,8 +584,8 @@ class Modsquad(Resource):
                       #print('found filename:',file['name'], ' with ID:',file['_id'])
                       fileIdList.append(file)
       # Also report datasets stored in the dataManagerLite
-      for obj in listLiteDatasets():
-        fileIdList.append(obj)
+      #for obj in listLiteDatasets():
+      #  fileIdList.append(obj)
 
       # return a single object that contains a list of all discovered datasets
       retobj = {}
