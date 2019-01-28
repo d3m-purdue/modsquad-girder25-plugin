@@ -721,10 +721,11 @@ class Modsquad(Resource):
       # now that we have a dataframe, clean out entries with 0 in lat or long
       if dataType == 'geospatial_trips':
         print(data_df.shape[0]," records before zero filter")
-        data_df = data_df.loc[data_df['pickup_longitude'] < 0.0]
-        data_df = data_df.loc[data_df['pickup_latitude'] > 0.0]
-        data_df = data_df.loc[data_df['dropoff_longitude'] < 0.0]
-        data_df = data_df.loc[data_df['dropoff_latitude'] > 0.0]
+        # in USA, longitude is negative
+        data_df = data_df.loc[data_df['pickup_longitude'] != 0.0]
+        data_df = data_df.loc[data_df['pickup_latitude'] != 0.0]
+        data_df = data_df.loc[data_df['dropoff_longitude'] != 0.0]
+        data_df = data_df.loc[data_df['dropoff_latitude'] != 0.0]
       print(data_df.shape[0],' records after zero filter')
 
       # now open girder connection and stream the dataframe as a CSV stream
