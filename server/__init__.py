@@ -38,6 +38,9 @@ import numpy as  np
 # girder address to read datasets from
 girder_api_prefix = 'http://localhost:8080/api/v1'
 
+# datamart API to use for suggesting new datasets
+datamart_api_prefix = ''
+
 class Modsquad(Resource):
     def __init__(self):
         super(Modsquad, self).__init__()
@@ -603,7 +606,7 @@ class Modsquad(Resource):
         Description('Retreive and return the contents of a dataset stored in a local girder instance.')
          .param('fileId', 'the girder Id of the file to retrieve', required=True,paramType='query')
     )
-    def getExternalFileContents(self,params):
+    def getExternalFileContents_old(self,params):
       self.requireParams('fileId', params)
       fileId = params['fileId']
       requesturl = girder_api_prefix+"/file/"+fileId+"/download"
@@ -617,6 +620,51 @@ class Modsquad(Resource):
       except:
         # return an empty file if there was a problem with the read
         return retobj
+
+
+    @access.public
+    @autoDescribeRoute(
+        Description('Retreive and return the contents of a dataset stored in a local girder instance.')
+         .param('fileId', 'the girder Id of the file to retrieve', required=True,paramType='query')
+    )
+    def getExternalFileContents(self,params):
+      self.requireParams('fileId', params)
+      fileId = params['fileId']
+      requesturl = girder_api_prefix+"/file/"+fileId+"/download"
+      retobj = {}
+      retobj['data'] = ''
+      #try:
+      resp = requests.get(requesturl)
+      print(resp.text)
+
+      # convert the file contents to a dataframe, so we can return it
+      data_file = StringIO.StringIO(resp.text)
+      data_df = pd.read_csv(data_file, sep=',')
+      # generate metadata
+      dataset_fields = data_df.columns.tolist()
+      dataset_types = []
+      dataset_row_count = data_df.shape[0]
+      dataset_column_count = data_df.shape[1]
+      dataset_contents = data_df.to_dict('records')
+      dataset_typelist = []
+      for key in data_df.dtypes.to_dict():
+        columntype = str(data_df.dtypes.to_dict()[key])
+        if columntype == 'object':
+          columntype = "string"
+        dataset_typelist.append(columntype)
+
+      retobj['data'] = resp.text
+      retobj['data'] = dataset_contents
+      retobj['fields'] = dataset_fields
+      retobj['datatypes'] = dataset_typelist
+      retobj['rows'] = dataset_row_count
+      retobj['columns'] = dataset_column_count
+      print('returning dataset details:',retobj)
+      return retobj
+      #except:
+        # return an empty file if there was a problem with the read
+        #return retobj
+
 
     # this endpoint combines two datasets together.  It takes arguments for the two
     # girder fileIds to use and the type of join to perform. This doesn't currently authenticate to
