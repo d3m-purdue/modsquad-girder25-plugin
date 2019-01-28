@@ -53,12 +53,13 @@ class Modsquad(Resource):
         self.route('GET', ('dataset', 'problems'), self.getProblems)
 
         # upload from custom interfaces
-        self.route('POST', ('dataset', 'upload'), self.uploadDataset)
+        self.route('POST', ('dataset', 'upload'), self.uploadGeoappDataset)
 
         # added Jan 2019
         self.route('GET', ('dataset', 'external_list'), self.getExternalDatasetList)
         self.route('GET', ('dataset', 'external_download'), self.getExternalFileContents)
         self.route('GET', ('dataset', 'merge'), self.pairwiseDatasetMerge)
+        self.route('GET', ('dataset', 'merge_and_store'), self.pairwiseDatasetMergeWithStorage)
 
         # Pipelines.
         self.route('GET', ('pipeline', 'results'), self.getResults)
@@ -584,8 +585,8 @@ class Modsquad(Resource):
                       #print('found filename:',file['name'], ' with ID:',file['_id'])
                       fileIdList.append(file)
       # Also report datasets stored in the dataManagerLite
-      for obj in listLiteDatasets():
-        fileIdList.append(obj)
+      #for obj in listLiteDatasets():
+      #  fileIdList.append(obj)
 
       # return a single object that contains a list of all discovered datasets
       retobj = {}
@@ -619,7 +620,42 @@ class Modsquad(Resource):
 
     # this endpoint combines two datasets together.  It takes arguments for the two
     # girder fileIds to use and the type of join to perform. This doesn't currently authenticate to
-    # girder, so publicly available files are assumed. 
+    # girder, so publicly available files are assumed.  A Pandas dataframe is returned
+
+    def _pairwiseDatasetMerge(fileId_1,  fileId_2, join_type="rows", join_column=None, right_join_column=None):
+
+      # go get the datasets
+      requesturl_1 = girder_api_prefix+"/file/"+fileId_1+"/download"
+      requesturl_2 = girder_api_prefix+"/file/"+fileId_2+"/download"
+      # build a merged name from the IDs of the source objects
+      merge_name = 'merged_'+str(fileId_1)+'_'+str(fileId_2)
+
+      try:
+        # read the data in from the external girder instance
+        resp_1 = requests.get(requesturl_1)
+        resp_2 = requests.get(requesturl_1)
+        data_1_str = resp_1.text
+        data_2_str = resp_2.text
+        # convert the two strings returned into lists of dictionaries
+        data_as_file1 = StringIO(data_1_str)
+        data_as_file2 = StringIO(data_2_str)
+        data1_df = pd.read_csv(data_as_file1, sep=',')
+        data2_df = pd.read_csv(data_as_file2, sep=',')
+
+        if join_type == 'rows':
+          result_df = pd.concat([data1_df,data2_df])
+        else:
+          # we allow the column names to be different if they are both specified, the default
+          # is for both to be the same name, if one one column name is provided.
+          if right_join_column==None:
+            right_join_column = join_column
+          result_df = pd.merge(data1_df, data2_df, how='inner', left_on=join_column, right_on=right_join_column)
+        return (result_df, merge_name)
+      except:
+        print('error: a problem occurred receiving or merging datasets')
+        return None      
+      
+
 
     @access.public
     @autoDescribeRoute(
@@ -634,60 +670,30 @@ class Modsquad(Resource):
       self.requireParams('fileId_1', params)
       self.requireParams('join_type', params)
       self.requireParams('fileId_2', params)
+      self.requireParams('join_column', params)
       fileId_1 = params['fileId_1']
       fileId_2 = params['fileId_2']
       join_type = params['join_type']
-
-      # set the value of the join column, default to d3mIndex if nothing specified
-      join_column = params['join_column'] if 'join_column' in params else 'd3mIndex'
-
-      # go get the datasets
-      requesturl_1 = girder_api_prefix+"/file/"+fileId_1+"/download"
-      requesturl_2 = girder_api_prefix+"/file/"+fileId_2+"/download"
+      (result_df, merged_name) = _pairwiseDatasetMerge(fileId_1,fileId_2,join_type=join_type, join_column=join_column)
       try:
-        # read the data in from the external girder instance
-        resp_1 = requests.get(requesturl_1)
-        resp_2 = requests.get(requesturl_1)
-        data_1_str = resp_1.text
-        data_2_str = resp_2.text
-        # convert the two strings returned into lists of dictionaries
-        data_as_file1 = StringIO(data_1_str)
-        data_as_file2 = StringIO(data_2_str)
-        data1_df = pd.read_csv(data_as_file1, sep=',')
-        data2_df = pd.read_csv(data_as_file2, sep=',')
-
-        if join_type == 'rows':
-          #print('join rows')
-          result_df = pd.concat([data1_df,data2_df])
-          #print(result_df.shape)
-          #result_as_list_of_dicts = result_df.to_dict('records')
-          # return as a csv string without the extra pandas index column
-          return result_df.to_csv(sep=',',index=False)
-        else:
-          #print('join columns')
-          #result_df = pd.concat([data1_df,data2_df],'axis'=1,'join_axes'=join_column,join='inner')
-          result_df = pd.merge(data1_df, data2_df, how='inner', left_on=join_column, right_on=join_column)
-          #print(result_df.shape)
-          # return as a csv string without the extra pandas index column
           return result_df.to_csv(sep=',',index=False)
       except:
         print('error: a problem occurred receiving or merging datasets')
         return None
 
 
-    # this endpoint accepts a data object and saves it as a new
+    # this endpoint accepts a GeoApp style exported data object and saves it as a new
     # dataset attached to a new item.  This is written as a simpler alternative
     # to streaming to girder's file/chunk API.  a dataType argument is accepted
     # to imply 
-
     @access.public
     @autoDescribeRoute(
-        Description('Accept a json object and write as a new local file. ')
+        Description('Accept a serialized json object from geoapp and write as a new local file. ')
          .param('data', 'the object to be stored', required=True,paramType='query')
          .param('name', 'the name of the object to be stored', required=True,paramType='query')
          .param('dataType', 'geospatial, temporal, tabular, image', required=True, paramType='query')
     )
-    def uploadDataset(self,params):
+    def uploadGeoappDataset(self,params):
       self.requireParams('data', params)
       self.requireParams('dataType', params)
       self.requireParams('name', params)
@@ -713,7 +719,7 @@ class Modsquad(Resource):
         dict_new[fields[idx]] = np.transpose(dataArray)[idx]
       data_df = pd.DataFrame(dict_new)
       # now that we have a dataframe, clean out entries with 0 in lat or long
-      if dataType == 'geospatial_messages':
+      if dataType == 'geospatial_trips':
         data_df = data_df.loc[data_df['pickup_longitude'] > 0.0]
         data_df = data_df.loc[data_df['pickup_latitude'] > 0.0]
         data_df = data_df.loc[data_df['dropoff_longitude'] > 0.0]
@@ -723,7 +729,7 @@ class Modsquad(Resource):
       # folder.  Each invocation creates a new item with the date in the name
       gc = girder_client.GirderClient(apiUrl=girder_api_prefix)
       login = gc.authenticate('modsquad', 'd3md3m')
-      dataString = data_df.to_csv()
+      dataString = data_df.to_csv(sep=',',index=False)
       stream = StringIO.StringIO(dataString)
       datasize = len(dataString)
       # get the folder ID for us to use
@@ -731,6 +737,37 @@ class Modsquad(Resource):
       folderID = folderRecord['_id']
       print('got folder ID:',folderID)
       resp = gc.uploadStreamToFolder(folderID, stream=stream, filename=name, size=datasize) 
+      return resp
+
+
+   # This endpoint joins two datasets and automatically saves the result back in
+   # the local girder instance.  This endpoint wraps the merge algorithm presented previously.
+    @access.public
+    @autoDescribeRoute(
+        Description('Combine two datasets via combining columns or rows and saving the results')
+         .param('fileId_1', 'the girder Id of the first file', required=True,paramType='query')
+         .param('fileId_2', 'the girder Id of the second file', required=True,paramType='query')
+         .param('join_type', 'specify either "rows" or "columns"', required=True,paramType='query')
+         .param('join_column', 'the name of the dataset column to use for a side-by-side join', required=False,paramType='query')
+    )
+    def pairwiseDatasetMergeWithStorage(self,params):
+      self.requireParams('fileId_1', params)
+      self.requireParams('join_type', params)
+      self.requireParams('fileId_2', params)
+      self.requireParams('join_column', params)
+      fileId_1 = params['fileId_1']
+      fileId_2 = params['fileId_2']
+      join_type = params['join_type']
+      join_column = params['join_column']
+      (joined_df, merged_name) = _pairwiseDatasetMerge(fileId_1,fileId_2,join_type=join_type,join_column=join_column)
+      dataString = joined_df.to_csv(sep=',',index=False)
+      stream = StringIO.StringIO(dataString)
+      datasize = len(dataString)
+      # get the folder ID for us to use
+      folderRecord = gc.resourceLookup('collection/datasets/geospatial')
+      folderID = folderRecord['_id']
+      print('got folder ID:',folderID)
+      resp = gc.uploadStreamToFolder(folderID, stream=stream, filename=merged_name, size=datasize) 
       return resp
 
 
