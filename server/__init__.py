@@ -651,7 +651,8 @@ class Modsquad(Resource):
         columntype = str(data_df.dtypes.to_dict()[key])
         if columntype == 'object':
           columntype = "string"
-        dataset_typelist.append(columntype)
+          #TODO: need to test for integer values here instead of returning float64
+        dataset_typelist.append({key: columntype})
 
       retobj['data'] = resp.text
       retobj['data'] = dataset_contents
