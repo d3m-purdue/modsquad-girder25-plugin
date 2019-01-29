@@ -35,6 +35,10 @@ import StringIO
 import pandas as pd
 import numpy as  np
 
+# for generating specs
+from . import generateSpecs
+
+
 # girder address to read datasets from
 girder_api_prefix = 'http://localhost:8080/api/v1'
 
@@ -199,6 +203,7 @@ class Modsquad(Resource):
                              })
 
         return problems
+
 
     def get_stub(self):
         server_channel_address = os.environ.get('TA2_SERVER_CONN')
@@ -640,28 +645,28 @@ class Modsquad(Resource):
       # convert the file contents to a dataframe, so we can return it
       data_file = StringIO.StringIO(resp.text)
       data_df = pd.read_csv(data_file, sep=',')
-      # generate metadata
-      dataset_fields = data_df.columns.tolist()
-      dataset_types = []
+      dataset_contents = data_df.to_dict('records')
       dataset_row_count = data_df.shape[0]
       dataset_column_count = data_df.shape[1]
-      dataset_contents = data_df.to_dict('records')
-      dataset_typelist = []
-      for key in data_df.dtypes.to_dict():
-        columntype = str(data_df.dtypes.to_dict()[key])
-        if columntype == 'object':
-          columntype = "string"
-          #TODO: need to test for integer values here instead of returning float64
-        dataset_typelist.append({key: columntype})
-
-      retobj['data'] = resp.text
+  
+      # generate metadata
+      (dataset_typelist,labels) = generateSpecs.generate_datatypes(data_df)
+  
+      #retobj['data'] = resp.text
       retobj['data'] = dataset_contents
-      retobj['fields'] = dataset_fields
+      retobj['fields'] = labels
       retobj['datatypes'] = dataset_typelist
       retobj['rows'] = dataset_row_count
       retobj['columns'] = dataset_column_count
+      full_problem_spec = generateSpecs.generate_dynamic_problem_spec(data_df,dataset_typelist)
+      retobj['problem'] = generateSpecs.generateReturnedProblem(full_problem_spec)
+      retobj['metadata'] = generateSpecs.generateMetadata(dataset_typelist,labels)
+      retobj['dataset_schema'] = {}
+      lastlabel = labels[-1:]
+      retobj['yvar'] = lastlabel
       print('returning dataset details:',retobj)
       return retobj
+
       #except:
         # return an empty file if there was a problem with the read
         #return retobj
