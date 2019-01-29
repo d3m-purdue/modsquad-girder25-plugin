@@ -666,7 +666,7 @@ class Modsquad(Resource):
       retobj['yvar'] = lastlabel
       print('returning dataset details:',retobj)
       return retobj
-
+  
       #except:
         # return an empty file if there was a problem with the read
         #return retobj

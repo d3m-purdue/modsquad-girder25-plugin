@@ -54,7 +54,7 @@ def generate_dynamic_problem_spec(data_df,targetColumnName=None):
     target['targetIndex'] = 0
     target['resID'] = '0'    # I don't remember what this is for
     target['colIndex'] = len(labels)-1
-    target['colName'] = labels[-1:]
+    target['colName'] = labels[-1:][0]
     targets = [target]
     
     # data record
