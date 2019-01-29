@@ -1,8 +1,9 @@
+import json
+import pandas
+
 def generate_datatypes(data_df):
     dataset_fields = data_df.columns.tolist()
     dataset_types = []
-    
-    
     dataset_typelist = []
     labellist = []
     for key in data_df.dtypes.to_dict():
@@ -13,6 +14,21 @@ def generate_datatypes(data_df):
         labellist.append(key)
         dataset_typelist.append({key: columntype})
     return (dataset_typelist,labellist)
+
+# almost duplicate of the one above, just arranged the output differently for key/value 
+# lookup instead of preserving order,the way the generate_datatypes does
+def generate_datadictionary(data_df):
+    dataset_fields = data_df.columns.tolist()
+    dataset_types = []
+    dataset_typelist = []
+    labeldict = {}
+    for key in data_df.dtypes.to_dict():
+        columntype = str(data_df.dtypes.to_dict()[key])
+        if columntype == 'object':
+            columntype = "string"
+            #TODO: need to test for integer values here instead of returning float64
+        labeldict[key] = columntype
+    return labeldict
 
 
 def generate_dynamic_problem_spec(data_df,targetColumnName=None):
@@ -28,18 +44,25 @@ def generate_dynamic_problem_spec(data_df,targetColumnName=None):
     about['problemSchemaVersion'] =  "3.1.1"
     about['problemDescription'] = 'dynamic problem'
     about['problemVersion'] = "1.0"
-    
-    # look at the last variable in the df as a placeholder target
-    (dtypes,labels) = generate_datatypes(data_df)
-    lastlabel = labels[-1:]
-    print('labels:',labels)
-    print(dtypes)
-    print(dtypes[-1:])
-    print(dtypes[-1:][0][lastlabel[0]])
-    print('dtypes:',dtypes)
-    lasttype_spec = dtypes[-1:][0]
-    lasttype = lasttype_spec[lastlabel[0]]
-    #print('lasttype :',lasttype)
+ 
+    (dtypes,labels) = generate_datatypes(data_df)   
+
+    if targetColumnName != None:
+        # need to find a matching entry in the datatypes array
+        dataTypeDict = generate_datadictionary(data_df)
+        lastlabel = targetColumnName
+        lasttype_spec = dataTypeDict[lastlabel]
+    else:
+        # look at the last variable in the df as a placeholder target
+        lastlabel = labels[-1:][0]
+        print('labels:',labels)
+        print(dtypes)
+        print(dtypes[-1:])
+        print(dtypes[-1:][0][lastlabel])
+        print('dtypes:',dtypes)
+        lasttype_spec = dtypes[-1:][0]
+        lasttype = lasttype_spec[lastlabel]
+   
     
     # if the target is categorical (like a string), then assume classification, otherwise assume regression
     if lasttype in ['string', 'integer']:
@@ -53,8 +76,8 @@ def generate_dynamic_problem_spec(data_df,targetColumnName=None):
     target = {}
     target['targetIndex'] = 0
     target['resID'] = '0'    # I don't remember what this is for
-    target['colIndex'] = len(labels)-1
-    target['colName'] = labels[-1:][0]
+    target['colIndex'] = labels.index([lastlabel])
+    target['colName'] = lastlabel
     targets = [target]
     
     # data record
@@ -124,10 +147,56 @@ def generateMetadata(dataset_typelist,labels):
         metadata.append(record)
     return metadata
 
+# make the database spec record (materialized into databaseDoc.json)
+# this will  the target var
+def generate_database_spec(problemSpec,data_df):
+    about = {}
+    dataResources = []
+    
+    # add the columns
+    cols = []
+    (types,labels) = generate_datatypes(data_df)
+    metadata = generateMetadata(types,labels)
+    # put in the declaration of where the data will be
+    res = {}
+    res['resID'] = 0
+    res['resPath'] = 'learningData.csv'
+    res['resType'] = 'table'
+    res['resFormat'] = ['text/csv']
+    res['isCollection'] = False
+    res['columns'] = metadata
+    dataResources = [res]
+    
+    databaseSpec = {}
+    databaseSpec['about'] = about
+    databaseSpec['dataResources'] = dataResources
+    return databaseSpec
 
 
+def writeDatabaseDocFile(path,databaseSpec):
+    filename = path+'/datasetDoc.json'
+    with open(filename, 'w') as outfile:
+        json.dump(databaseSpec, outfile)
 
 
+def writeDatasetContents(path,databaseSpec,data_df):
+    filename = path+databaseSpec['dataResources'][0]['resPath']
+    data_df.to_csv(filename)
+
+def writeProblemSpecFile(path,problemSpec):
+    filename = path+'/problemDoc.json'
+    with open(filename, 'w') as outfile:
+        json.dump(problemSpec, outfile)
+
+def readProblemSpecFile(path):
+    filename = path+'/problemDoc.json'
+    with open(filename) as specfile:
+        return json.load(specfile)
+
+def readDatasetDocFile(path):
+    filename = path+'/datasetDoc.json'
+    with open(filename) as specfile:
+        return json.load(specfile)
 
 
 

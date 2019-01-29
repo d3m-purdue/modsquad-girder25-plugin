@@ -42,6 +42,8 @@ from . import generateSpecs
 # girder address to read datasets from
 girder_api_prefix = 'http://localhost:8080/api/v1'
 
+dynamic_problem_root = '/output/modsquad_files'
+
 # datamart API to use for suggesting new datasets
 datamart_api_prefix = ''
 
@@ -379,57 +381,116 @@ class Modsquad(Resource):
     def createPipeline(self,params):
       self.requireParams('data_uri', params)
       self.requireParams('inactive', params)
-
+      self.requireParams('target',   params)
+      self.requireParams('dynamic_mode', params)
       data_uri = params['data_uri']
       inactive = params['inactive']
-      if 'time_limit' not in params:
-        time_limit=1
+      target = params['target']
+      dynamic_mode = params['dynamic_mode']
+
+      if dyamic_mode == True:
+        # we are being called after the user built a custom dataset, don't use 
+        # the environment variables.  Pull from the problemSpec instead
+        problem_spec = generateSpecs.readProblemSpecFile(dynamic_problem_root,target)
+        database_spec = generateSpecs.readDatasetDocFile(dynamic_problem_root)
+        data_uri = dynamic_problem_root+'/datasetDoc.json'
+    
+        if 'time_limit' not in params:
+          time_limit=1
+        else:
+          time_limit = params['time_limit']
+
+        stub = self.get_stub()
+
+        # if the user has elected to ignore some variables, then generate a modified spec
+        # and load from the modified spec
+
+        if inactive != None:
+          print('detected inactive variables:', inactive)
+          modified_dataset_schema_path = '/output/modsquad_modified_files'
+          self.generate_modified_database_spec(dynamic_problem_root,modified_dataset_schema_path, inactive)
+          dataset_spec = generateSpecs.readDatasetDocFile(modified_dataset_schema_path)
+
+      
+        # get the target features into the record format expected by the API
+        targets =  problem_spec['inputs']['data'][0]['targets']  
+
+        problem = problem_pb2.Problem(
+          id = problem_spec['about']['problemID'],
+          version = problem_spec['about']['problemSchemaVersion'],
+          name = 'modsquad_problem',
+          description = 'modsquad problem',
+          task_type = self.taskTypeLookup(problem_spec['about']['taskType']),
+          task_subtype = problem_pb2.NONE,
+          performance_metrics = map(lambda x: problem_pb2.ProblemPerformanceMetric(metric=self.metricLookup(x['metric'], problem_spec['about']['taskType'])), problem_spec['inputs']['performanceMetrics']))
+
+        value = value_pb2.Value(dataset_uri=data_uri)
+        req = core_pb2.SearchSolutionsRequest(
+                user_agent='modsquad',
+                #version=core_pb2.protcol_version,
+                version="2018.7.7",
+                time_bound=int(time_limit),
+                problem=problem_pb2.ProblemDescription(
+                    problem=problem,
+                    inputs=[problem_pb2.ProblemInput(
+                        dataset_id=dataset_spec['about']['datasetID'],
+                        targets=map(self.make_target, targets))]),
+                inputs=[value])
+
+      # use the standard way, read from files
       else:
-        time_limit = params['time_limit']
 
-      stub = self.get_stub()
+        data_uri = params['data_uri']
+        inactive = params['inactive']
+        if 'time_limit' not in params:
+          time_limit=1
+        else:
+          time_limit = params['time_limit']
 
-      problem_schema_path = os.environ.get('PROBLEM_ROOT')
-      problem_supply = d3mds.D3MProblem(problem_schema_path)
+        stub = self.get_stub()
 
-      # get a pointer to the original dataset description doc
-      dataset_schema_path = os.environ.get('TRAINING_DATA_ROOT')
+        problem_schema_path = os.environ.get('PROBLEM_ROOT')
+        problem_supply = d3mds.D3MProblem(problem_schema_path)
+        # get a pointer to the original dataset description doc
+        dataset_schema_path = os.environ.get('TRAINING_DATA_ROOT')
 
-      # if the user has elected to ignore some variables, then generate a modified spec
-      # and load from the modified spec
+        # if the user has elected to ignore some variables, then generate a modified spec
+        # and load from the modified spec
 
-      if inactive != None:
-        print('detected inactive variables:', inactive)
-        modified_dataset_schema_path = '/output/supporting_files'
-        self.generate_modified_database_spec(dataset_schema_path,modified_dataset_schema_path, inactive)
-        dataset_supply = d3mds.D3MDataset(modified_dataset_schema_path)
-      else:
-        dataset_supply = d3mds.D3MDataset(dataset_schema_path)
+        if inactive != None:
+          print('detected inactive variables:', inactive)
+          modified_dataset_schema_path = '/output/modsquad_modified_files'
+          self.generate_modified_database_spec(dataset_schema_path,modified_dataset_schema_path, inactive)
+          dataset_supply = d3mds.D3MDataset(modified_dataset_schema_path)
+        else:
+          dataset_supply = d3mds.D3MDataset(dataset_schema_path)
 
-      # get the target features into the record format expected by the API
-      targets =  problem_supply.get_targets()  
+        # get the target features into the record format expected by the API
+        targets =  problem_supply.get_targets()  
 
-      problem = problem_pb2.Problem(
-        id = problem_supply.get_problemID(),
-        version = problem_supply.get_problemSchemaVersion(),
-        name = 'modsquad_problem',
-        description = 'modsquad problem',
-        task_type = self.taskTypeLookup(problem_supply.get_taskType()),
-        task_subtype = self.subTaskLookup(problem_supply.get_taskSubType()),
-        performance_metrics = map(lambda x: problem_pb2.ProblemPerformanceMetric(metric=self.metricLookup(x['metric'], problem_supply.get_taskType())), problem_supply.get_performance_metrics()))
+        problem = problem_pb2.Problem(
+          id = problem_supply.get_problemID(),
+          version = problem_supply.get_problemSchemaVersion(),
+          name = 'modsquad_problem',
+          description = 'modsquad problem',
+          task_type = self.taskTypeLookup(problem_supply.get_taskType()),
+          task_subtype = self.subTaskLookup(problem_supply.get_taskSubType()),
+          performance_metrics = map(lambda x: problem_pb2.ProblemPerformanceMetric(metric=self.metricLookup(x['metric'], problem_supply.get_taskType())), problem_supply.get_performance_metrics()))
 
-      value = value_pb2.Value(dataset_uri=data_uri)
-      req = core_pb2.SearchSolutionsRequest(
-              user_agent='modsquad',
-              #version=core_pb2.protcol_version,
-              version="2018.7.7",
-              time_bound=int(time_limit),
-              problem=problem_pb2.ProblemDescription(
-                  problem=problem,
-                  inputs=[problem_pb2.ProblemInput(
-                      dataset_id=dataset_supply.get_datasetID(),
-                      targets=map(self.make_target, problem_supply.get_targets()))]),
-              inputs=[value])
+        value = value_pb2.Value(dataset_uri=data_uri)
+        req = core_pb2.SearchSolutionsRequest(
+                user_agent='modsquad',
+                #version=core_pb2.protcol_version,
+                version="2018.7.7",
+                time_bound=int(time_limit),
+                problem=problem_pb2.ProblemDescription(
+                    problem=problem,
+                    inputs=[problem_pb2.ProblemInput(
+                        dataset_id=dataset_supply.get_datasetID(),
+                        targets=map(self.make_target, problem_supply.get_targets()))]),
+                inputs=[value])
+
+
       #logger.info('about to make searchSolutions request')
       logger.info("sending search solutions request:",MessageToJson(req))
       resp = stub.SearchSolutions(req)
@@ -651,20 +712,29 @@ class Modsquad(Resource):
   
       # generate metadata
       (dataset_typelist,labels) = generateSpecs.generate_datatypes(data_df)
-  
+
+      # generate and write out new specs for dataset and problem
+      full_problem_spec = generateSpecs.generate_dynamic_problem_spec(data_df,dataset_typelist)
+      database_spec = generateSpecs.generate_database_spec(full_problem_spec,data_df)
+      generateSpecs.writeDatabaseDocFile(dynamic_problem_root, database_spec)
+      generateSpecs.writeDatasetContents(dynamic_problem_root, database_spec, data_df)
+      writeProblemSpecFile(dynamic_problem_root, full_problem_spec)
+
       #retobj['data'] = resp.text
       retobj['data'] = dataset_contents
       retobj['fields'] = labels
       retobj['datatypes'] = dataset_typelist
       retobj['rows'] = dataset_row_count
       retobj['columns'] = dataset_column_count
-      full_problem_spec = generateSpecs.generate_dynamic_problem_spec(data_df,dataset_typelist)
+
       retobj['problem'] = generateSpecs.generateReturnedProblem(full_problem_spec)
       retobj['metadata'] = generateSpecs.generateMetadata(dataset_typelist,labels)
       retobj['dataset_schema'] = {}
       lastlabel = labels[-1:]
       retobj['yvar'] = lastlabel[0]
       print('returning dataset details:',retobj)
+  
+
       return retobj
   
       #except:
