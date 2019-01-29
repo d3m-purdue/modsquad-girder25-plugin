@@ -40,7 +40,7 @@ from . import generateSpecs
 
 
 # girder address to read datasets from
-girder_api_prefix = 'http://localhost:8080/api/v1'
+girder_api_prefix = 'http://10.108.4.60:8080/api/v1'
 
 dynamic_problem_root = '/output/modsquad_files'
 
@@ -109,7 +109,8 @@ class Modsquad(Resource):
             os.system('rm -rf /output/*')
             os.mkdir('/output/pipelines')
             os.mkdir('/output/executables')
-            os.mkdir('/output/supporting_files')
+            os.mkdir('/output/modsquad_files')
+            os.mkdir('/output/modsquad_modified_files')
             os.mkdir('/output/predictions')
         except:
             pass
@@ -388,7 +389,7 @@ class Modsquad(Resource):
       target = params['target']
       dynamic_mode = params['dynamic_mode']
 
-      if dyamic_mode == True:
+      if dynamic_mode == True:
         # we are being called after the user built a custom dataset, don't use 
         # the environment variables.  Pull from the problemSpec instead
         problem_spec = generateSpecs.readProblemSpecFile(dynamic_problem_root,target)
@@ -709,10 +710,10 @@ class Modsquad(Resource):
       dataset_contents = data_df.to_dict('records')
       dataset_row_count = data_df.shape[0]
       dataset_column_count = data_df.shape[1]
-   
+  
       # generate metadata
       (dataset_typelist,labels) = generateSpecs.generate_datatypes(data_df)
- 
+
       # generate and write out new specs for dataset and problem
       full_problem_spec = generateSpecs.generate_dynamic_problem_spec(data_df,dataset_typelist)
       database_spec = generateSpecs.generate_database_spec(full_problem_spec,data_df)
