@@ -663,7 +663,7 @@ class Modsquad(Resource):
       retobj['metadata'] = generateSpecs.generateMetadata(dataset_typelist,labels)
       retobj['dataset_schema'] = {}
       lastlabel = labels[-1:]
-      retobj['yvar'] = lastlabel
+      retobj['yvar'] = lastlabel[0]
       print('returning dataset details:',retobj)
       return retobj
   
