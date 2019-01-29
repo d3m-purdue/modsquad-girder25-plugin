@@ -183,7 +183,7 @@ def writeDatabaseDocFile(path,databaseSpec):
 
 
 def writeDatasetContents(path,databaseSpec,data_df):
-    filename = path+databaseSpec['dataResources'][0]['resPath']
+    filename = path+'/'+databaseSpec['dataResources'][0]['resPath']
     data_df.to_csv(filename)
 
 def writeProblemSpecFile(path,problemSpec):
