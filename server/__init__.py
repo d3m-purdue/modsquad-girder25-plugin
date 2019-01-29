@@ -35,6 +35,9 @@ import StringIO
 import pandas as pd
 import numpy as  np
 
+def remove_non_ascii(text):
+	return ''.join(i for i in text if ord(i)<128)
+
 # girder address to read datasets from
 girder_api_prefix = 'http://localhost:8080/api/v1'
 
@@ -675,6 +678,7 @@ class Modsquad(Resource):
         return None
 
 
+
     # this endpoint accepts a data object and saves it as a new
     # dataset attached to a new item.  This is written as a simpler alternative
     # to streaming to girder's file/chunk API.  a dataType argument is accepted
@@ -707,13 +711,17 @@ class Modsquad(Resource):
       print('number of fields received:',len(fields))
       dataArray = data['data']
       print('number of elements received:',len(dataArray))
+      # clean up the strings so they can be converted to CSV
+      for inx in range(len(dataArray)):
+	dataArray[inx][2] = remove_non_ascii(dataArray[inx][2])	
+
       # pack the values into a dictionary and convert to a dataframe
       dict_new = {}
       for idx in range(len(fields)):
         dict_new[fields[idx]] = np.transpose(dataArray)[idx]
       data_df = pd.DataFrame(dict_new)
       # now that we have a dataframe, clean out entries with 0 in lat or long
-      if dataType == 'geospatial_messages':
+      if dataType == 'geospatial_trips':
         data_df = data_df.loc[data_df['pickup_longitude'] > 0.0]
         data_df = data_df.loc[data_df['pickup_latitude'] > 0.0]
         data_df = data_df.loc[data_df['dropoff_longitude'] > 0.0]
