@@ -709,16 +709,16 @@ class Modsquad(Resource):
       dataset_contents = data_df.to_dict('records')
       dataset_row_count = data_df.shape[0]
       dataset_column_count = data_df.shape[1]
-  
+   
       # generate metadata
       (dataset_typelist,labels) = generateSpecs.generate_datatypes(data_df)
-
+ 
       # generate and write out new specs for dataset and problem
       full_problem_spec = generateSpecs.generate_dynamic_problem_spec(data_df,dataset_typelist)
       database_spec = generateSpecs.generate_database_spec(full_problem_spec,data_df)
       generateSpecs.writeDatabaseDocFile(dynamic_problem_root, database_spec)
       generateSpecs.writeDatasetContents(dynamic_problem_root, database_spec, data_df)
-      writeProblemSpecFile(dynamic_problem_root, full_problem_spec)
+      generateSpecs.writeProblemSpecFile(dynamic_problem_root, full_problem_spec)
 
       #retobj['data'] = resp.text
       retobj['data'] = dataset_contents

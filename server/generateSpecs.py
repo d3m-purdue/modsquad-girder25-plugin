@@ -15,8 +15,21 @@ def generate_datatypes(data_df):
         dataset_typelist.append({key: columntype})
     return (dataset_typelist,labellist)
 
-# almost duplicate of the one above, just arranged the output differently for key/value 
-# lookup instead of preserving order,the way the generate_datatypes does
+def generate_datatypesSeries(data_df):
+    dataset_fields = data_df.columns.tolist()
+    dataset_types = []
+    dataset_typelist = []
+    labellist = []
+    for key in dataset_fields:
+        columntype = str(data_df.dtypes[key])
+        if columntype == 'object':
+            columntype = "string"
+            #TODO: need to test for integer values here instead of returning float64
+        labellist.append(key)
+        dataset_typelist.append({key: columntype})
+    return (dataset_typelist,labellist)
+
+
 def generate_datadictionary(data_df):
     dataset_fields = data_df.columns.tolist()
     dataset_types = []
@@ -45,27 +58,17 @@ def generate_dynamic_problem_spec(data_df,targetColumnName=None):
     about['problemDescription'] = 'dynamic problem'
     about['problemVersion'] = "1.0"
  
-    (dtypes,labels) = generate_datatypes(data_df)   
-
-    if targetColumnName != None:
-        # need to find a matching entry in the datatypes array
-        dataTypeDict = generate_datadictionary(data_df)
-        lastlabel = targetColumnName
-        lasttype_spec = dataTypeDict[lastlabel]
+    (dtypes,labels) = generate_datatypesSeries(data_df)   
+    labelTypesDict = generate_datadictionary(data_df)
+    # look at the last variable in the df as a placeholder target
+    if targetColumnName == None:
+        currentTargetLabel = labels[-1:][0]
     else:
-        # look at the last variable in the df as a placeholder target
-        lastlabel = labels[-1:][0]
-        print('labels:',labels)
-        print(dtypes)
-        print(dtypes[-1:])
-        print(dtypes[-1:][0][lastlabel])
-        print('dtypes:',dtypes)
-        lasttype_spec = dtypes[-1:][0]
-        lasttype = lasttype_spec[lastlabel]
-   
-    
+        currentTargetLabel = targetColumnName
+    currentTargetType = labelTypesDict[currentTargetLabel]
+     
     # if the target is categorical (like a string), then assume classification, otherwise assume regression
-    if lasttype in ['string', 'integer']:
+    if currentTargetType in ['string', 'integer']:
         performanceMetrics = [{'metric': 'f1Macro'}]
         about['taskType'] = 'classification'
     else:
@@ -76,8 +79,8 @@ def generate_dynamic_problem_spec(data_df,targetColumnName=None):
     target = {}
     target['targetIndex'] = 0
     target['resID'] = '0'    # I don't remember what this is for
-    target['colIndex'] = labels.index([lastlabel])
-    target['colName'] = lastlabel
+    target['colIndex'] = labels.index(currentTargetLabel)
+    target['colName'] = currentTargetLabel
     targets = [target]
     
     # data record
