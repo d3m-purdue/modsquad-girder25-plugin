@@ -75,7 +75,7 @@ def generate_dynamic_problem_spec(data_df,targetColumnName=None):
     # targets
     target = {}
     target['targetIndex'] = 0
-    target['resID'] = '0'    # I don't remember what this is for
+    target['resID'] = "0"    # I don't remember what this is for
     print('labels:',labels)
     print('lastlabel:',lastlabel)
     print('lastlabel[0]:',lastlabel[0])
@@ -156,6 +156,17 @@ def generate_database_spec(problemSpec,data_df):
     about = {}
     dataResources = []
     
+    ###  ABOUT record
+    about = {}
+    about['datasetID'] = 'dynamicProblem-ModSquad'
+    about['datasetName'] = 'dynamicProblem-ModSquad'
+    about['citation'] = ''
+    about['source'] = ''
+    about['license'] = ''
+    about["sourceURI"]= "https://www.acleddata.com/"
+    about['redacted'] = False
+    about['datasetSchemaVersion'] =  "3.0.0"
+    about['datasetVersion'] = "1.0"
     # add the columns
     cols = []
     (types,labels) = generate_datatypes(data_df)
@@ -183,7 +194,7 @@ def writeDatabaseDocFile(path,databaseSpec):
 
 
 def writeDatasetContents(path,databaseSpec,data_df):
-    filename = path+databaseSpec['dataResources'][0]['resPath']
+    filename = path+'/'+databaseSpec['dataResources'][0]['resPath']
     data_df.to_csv(filename)
 
 def writeProblemSpecFile(path,problemSpec):

@@ -40,7 +40,8 @@ from . import generateSpecs
 
 
 # girder address to read datasets from
-girder_api_prefix = 'http://10.108.4.60:8080/api/v1'
+#girder_api_prefix = 'http://10.108.4.60:8080/api/v1'
+girder_api_prefix = 'http://localhost:8080/api/v1'
 
 dynamic_problem_root = '/output/modsquad_files'
 
@@ -110,6 +111,7 @@ class Modsquad(Resource):
             os.mkdir('/output/pipelines')
             os.mkdir('/output/executables')
             os.mkdir('/output/modsquad_files')
+            os.mkdir('/output/modsquad_files/tables')
             os.mkdir('/output/modsquad_modified_files')
             os.mkdir('/output/predictions')
         except:
@@ -719,6 +721,7 @@ class Modsquad(Resource):
       database_spec = generateSpecs.generate_database_spec(full_problem_spec,data_df)
       generateSpecs.writeDatabaseDocFile(dynamic_problem_root, database_spec)
       generateSpecs.writeDatasetContents(dynamic_problem_root, database_spec, data_df)
+      generateSpecs.writeDatasetContents(dynamic_problem_root+'/tables/', database_spec, data_df)
       generateSpecs.writeProblemSpecFile(dynamic_problem_root, full_problem_spec)
 
       #retobj['data'] = resp.text
