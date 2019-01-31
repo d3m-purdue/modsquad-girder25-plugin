@@ -719,9 +719,9 @@ class Modsquad(Resource):
       # generate and write out new specs for dataset and problem
       full_problem_spec = generateSpecs.generate_dynamic_problem_spec(data_df,dataset_typelist)
       database_spec = generateSpecs.generate_database_spec(full_problem_spec,data_df)
+      
       generateSpecs.writeDatabaseDocFile(dynamic_problem_root, database_spec)
       generateSpecs.writeDatasetContents(dynamic_problem_root, database_spec, data_df)
-      generateSpecs.writeDatasetContents(dynamic_problem_root+'/tables/', database_spec, data_df)
       generateSpecs.writeProblemSpecFile(dynamic_problem_root, full_problem_spec)
 
       #retobj['data'] = resp.text
@@ -733,12 +733,12 @@ class Modsquad(Resource):
 
       retobj['problem'] = generateSpecs.generateReturnedProblem(full_problem_spec)
       retobj['metadata'] = generateSpecs.generateMetadata(dataset_typelist,labels)
-      retobj['dataset_schema'] = {}
+      retobj['dataSchema'] = dynamic_problem_root+'/datasetDoc.json' 
+      retobj['config'] = generateSpecs.generateConfig() 
+      retobj['dataset_schema'] = dynamic_problem_root+'/datasetDoc.json' 
       lastlabel = labels[-1:]
       retobj['yvar'] = lastlabel[0]
-      print('returning dataset details:',retobj)
-  
-
+      #print('returning dataset details:',retobj)
       return retobj
   
       #except:

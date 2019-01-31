@@ -174,7 +174,7 @@ def generate_database_spec(problemSpec,data_df):
     # put in the declaration of where the data will be
     res = {}
     res['resID'] = 0
-    res['resPath'] = 'learningData.csv'
+    res['resPath'] = 'tables/learningData.csv'
     res['resType'] = 'table'
     res['resFormat'] = ['text/csv']
     res['isCollection'] = False
@@ -186,6 +186,18 @@ def generate_database_spec(problemSpec,data_df):
     databaseSpec['dataResources'] = dataResources
     return databaseSpec
 
+def generateConfig():
+    record = {}
+    record["problem_schema"]= "/output/modsquad_files/problemDoc.json"
+    record["problem_root"]= "/output/modsquad_files"
+    record["dataset_schema"]= "/output/modsquad_files/datasetDoc.json"
+    record["training_data_root"]= "/output/modsquad_files/"
+    record["pipeline_logs_root"]= "/output/pipelines"
+    record["executables_root"]= "/output/executables"
+    record["temp_storage_root"]= "/output/supporting_files"
+    record['dataset_schema'] = '/output/modsquad_files/datasetDoc.json' 
+    record["dynamic_mode"] = True
+    return record
 
 def writeDatabaseDocFile(path,databaseSpec):
     filename = path+'/datasetDoc.json'
