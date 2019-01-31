@@ -205,9 +205,21 @@ def writeDatabaseDocFile(path,databaseSpec):
         json.dump(databaseSpec, outfile)
 
 
+def addIndexColumnIfNeeded(data_df):
+    # doesn't do anything now, might need to add logic to add a d3mIndex column
+    return data_df
+
 def writeDatasetContents(path,databaseSpec,data_df):
     filename = path+'/'+databaseSpec['dataResources'][0]['resPath']
     data_df.to_csv(filename)
+
+def writeConfig(path,configSpec):
+    filename = path+'/search-config.json'
+    with open(filename, 'w') as outfile:
+        json.dump(configSpec, outfile)
+    filename = path+'/config.json'
+    with open(filename, 'w') as outfile:
+        json.dump(configSpec, outfile)
 
 def writeProblemSpecFile(path,problemSpec):
     filename = path+'/problemDoc.json'

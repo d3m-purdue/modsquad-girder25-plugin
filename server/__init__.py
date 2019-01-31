@@ -391,10 +391,15 @@ class Modsquad(Resource):
       target = params['target']
       dynamic_mode = params['dynamic_mode']
 
+      dynamic_mode = True
+
+      print('creating pipeline. dynamic=',dynamic_mode)      
+
       if dynamic_mode == True:
         # we are being called after the user built a custom dataset, don't use 
         # the environment variables.  Pull from the problemSpec instead
-        problem_spec = generateSpecs.readProblemSpecFile(dynamic_problem_root,target)
+	print("dynamic problem startup! Exciting!")
+        problem_spec = generateSpecs.readProblemSpecFile(dynamic_problem_root)
         database_spec = generateSpecs.readDatasetDocFile(dynamic_problem_root)
         data_uri = dynamic_problem_root+'/datasetDoc.json'
     
@@ -414,9 +419,9 @@ class Modsquad(Resource):
           self.generate_modified_database_spec(dynamic_problem_root,modified_dataset_schema_path, inactive)
           dataset_spec = generateSpecs.readDatasetDocFile(modified_dataset_schema_path)
 
-      
         # get the target features into the record format expected by the API
         targets =  problem_spec['inputs']['data'][0]['targets']  
+        target =  problem_spec['inputs']['data'][0]['targets']  
 
         problem = problem_pb2.Problem(
           id = problem_spec['about']['problemID'],
@@ -443,6 +448,7 @@ class Modsquad(Resource):
       # use the standard way, read from files
       else:
 
+	print("standard problem startup from files")
         data_uri = params['data_uri']
         inactive = params['inactive']
         if 'time_limit' not in params:
@@ -496,6 +502,7 @@ class Modsquad(Resource):
 
       #logger.info('about to make searchSolutions request')
       logger.info("sending search solutions request:",MessageToJson(req))
+      print('sending search solutions request:',MessageToJson(req))
       resp = stub.SearchSolutions(req)
       #logger.info('after searchSolutionsRequest')
       print('set time bound to be: ',time_limit,' minutes')
@@ -709,6 +716,7 @@ class Modsquad(Resource):
       # convert the file contents to a dataframe, so we can return it
       data_file = StringIO.StringIO(resp.text)
       data_df = pd.read_csv(data_file, sep=',')
+      data_df = generateSpecs.addIndexColumnIfNeeded(data_df)
       dataset_contents = data_df.to_dict('records')
       dataset_row_count = data_df.shape[0]
       dataset_column_count = data_df.shape[1]
@@ -719,10 +727,11 @@ class Modsquad(Resource):
       # generate and write out new specs for dataset and problem
       full_problem_spec = generateSpecs.generate_dynamic_problem_spec(data_df,dataset_typelist)
       database_spec = generateSpecs.generate_database_spec(full_problem_spec,data_df)
-      
+      config_spec = generateSpecs.generateConfig()
       generateSpecs.writeDatabaseDocFile(dynamic_problem_root, database_spec)
       generateSpecs.writeDatasetContents(dynamic_problem_root, database_spec, data_df)
       generateSpecs.writeProblemSpecFile(dynamic_problem_root, full_problem_spec)
+      #generateSpecs.writeConfig("/input",config_spec)
 
       #retobj['data'] = resp.text
       retobj['data'] = dataset_contents
@@ -734,7 +743,7 @@ class Modsquad(Resource):
       retobj['problem'] = generateSpecs.generateReturnedProblem(full_problem_spec)
       retobj['metadata'] = generateSpecs.generateMetadata(dataset_typelist,labels)
       retobj['dataSchema'] = dynamic_problem_root+'/datasetDoc.json' 
-      retobj['config'] = generateSpecs.generateConfig() 
+      retobj['config'] = config_spec 
       retobj['dataset_schema'] = dynamic_problem_root+'/datasetDoc.json' 
       lastlabel = labels[-1:]
       retobj['yvar'] = lastlabel[0]
