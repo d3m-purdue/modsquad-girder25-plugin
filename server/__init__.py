@@ -110,6 +110,8 @@ class Modsquad(Resource):
             os.system('rm -rf /output/*')
             os.mkdir('/output/pipelines')
             os.mkdir('/output/executables')
+            os.mkdir('/output/exposed_outputs')
+            os.mkdir('/output/temp')
             os.mkdir('/output/modsquad_files')
             os.mkdir('/output/modsquad_files/tables')
             os.mkdir('/output/modsquad_modified_files')
@@ -368,13 +370,13 @@ class Modsquad(Resource):
 
         if resultURI[0:7] == 'file://':
             resultURI = resultURI[7:]
-
-        # copy the results file under the webroot so it can be read by
-        # javascript without having cross origin problems
-        with open(resultURI,'r') as f:
-          content = f.read()
-          f.close()
-          return content
+        #with open(resultURI,'r') as f:
+        #  content = f.read()
+        #  f.close()
+	#  return content
+	data_df = pd.read_csv(resultURI)
+        list_of_dicts = [data_df.iloc[line,:].T.to_dict() for line in range(len(data_df))]
+	return list_of_dicts 
 
 
     @access.public
@@ -391,7 +393,7 @@ class Modsquad(Resource):
       target = params['target']
       dynamic_mode = params['dynamic_mode']
 
-      dynamic_mode = True
+      dynamic_mode = False
 
       print('creating pipeline. dynamic=',dynamic_mode)      
 
