@@ -201,6 +201,7 @@ def generateConfig():
 
 def writeDatabaseDocFile(path,databaseSpec):
     filename = path+'/datasetDoc.json'
+    print('write database file:',filename)
     with open(filename, 'w') as outfile:
         json.dump(databaseSpec, outfile)
 

@@ -117,6 +117,7 @@ class Modsquad(Resource):
             os.mkdir('/output/modsquad_modified_files')
             os.mkdir('/output/predictions')
         except:
+	    print('failed to cleanup directories')
             pass
 
         logger.info('received json configuration: %s' % (config))
@@ -370,11 +371,11 @@ class Modsquad(Resource):
 
         if resultURI[0:7] == 'file://':
             resultURI = resultURI[7:]
-        #with open(resultURI,'r') as f:
-        #  content = f.read()
-        #  f.close()
-	#  return content
+	# prevent warnings
+	pd.options.mode.chained_assignment = None
 	data_df = pd.read_csv(resultURI)
+	data_df = data_df.copy() 
+	data_df['d3mIndex'] = data_df['d3mIndex'].astype(int)
         list_of_dicts = [data_df.iloc[line,:].T.to_dict() for line in range(len(data_df))]
 	return list_of_dicts 
 
@@ -415,11 +416,11 @@ class Modsquad(Resource):
         # if the user has elected to ignore some variables, then generate a modified spec
         # and load from the modified spec
 
-        if inactive != None:
-          print('detected inactive variables:', inactive)
-          modified_dataset_schema_path = '/output/modsquad_modified_files'
-          self.generate_modified_database_spec(dynamic_problem_root,modified_dataset_schema_path, inactive)
-          dataset_spec = generateSpecs.readDatasetDocFile(modified_dataset_schema_path)
+        #if inactive != None:
+        #  print('detected inactive variables:', inactive)
+        #  modified_dataset_schema_path = '/output/modsquad_modified_files'
+        #  self.generate_modified_database_spec(dynamic_problem_root,modified_dataset_schema_path, inactive)
+        #  dataset_spec = generateSpecs.readDatasetDocFile(modified_dataset_schema_path)
 
         # get the target features into the record format expected by the API
         targets =  problem_spec['inputs']['data'][0]['targets']  
@@ -688,6 +689,7 @@ class Modsquad(Resource):
       self.requireParams('fileId', params)
       fileId = params['fileId']
       requesturl = girder_api_prefix+"/file/"+fileId+"/download"
+      print('attempting download from url:',requesturl)
       retobj = {}
       retobj['data'] = ''
       try:
