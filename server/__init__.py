@@ -394,16 +394,18 @@ class Modsquad(Resource):
       target = params['target']
       dynamic_mode = params['dynamic_mode']
 
-      dynamic_mode = False
+      print('creating pipeline. dynamic=',dynamic_mode)   
+
+      dynamic_mode = "True"
 
       print('creating pipeline. dynamic=',dynamic_mode)      
 
-      if dynamic_mode == True:
+      if dynamic_mode == "True":
         # we are being called after the user built a custom dataset, don't use 
         # the environment variables.  Pull from the problemSpec instead
-	print("dynamic problem startup! Exciting!")
+        print("dynamic problem startup! Exciting!")
         problem_spec = generateSpecs.readProblemSpecFile(dynamic_problem_root)
-        database_spec = generateSpecs.readDatasetDocFile(dynamic_problem_root)
+        dataset_spec = generateSpecs.readDatasetDocFile(dynamic_problem_root)
         data_uri = dynamic_problem_root+'/datasetDoc.json'
     
         if 'time_limit' not in params:
@@ -450,8 +452,7 @@ class Modsquad(Resource):
 
       # use the standard way, read from files
       else:
-
-	print("standard problem startup from files")
+        print("standard problem startup from files")
         data_uri = params['data_uri']
         inactive = params['inactive']
         if 'time_limit' not in params:
@@ -504,8 +505,8 @@ class Modsquad(Resource):
 
 
       #logger.info('about to make searchSolutions request')
-      logger.info("sending search solutions request:",MessageToJson(req))
-      print('sending search solutions request:',MessageToJson(req))
+      #logger.info("sending search solutions request:",MessageToJson(req))
+      #print('sending search solutions request:',MessageToJson(req))
       resp = stub.SearchSolutions(req)
       #logger.info('after searchSolutionsRequest')
       print('set time bound to be: ',time_limit,' minutes')
@@ -724,7 +725,7 @@ class Modsquad(Resource):
       dataset_contents = data_df.to_dict('records')
       dataset_row_count = data_df.shape[0]
       dataset_column_count = data_df.shape[1]
-  
+
       # generate metadata
       (dataset_typelist,labels) = generateSpecs.generate_datatypes(data_df)
 

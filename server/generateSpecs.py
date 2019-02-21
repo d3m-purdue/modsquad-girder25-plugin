@@ -1,18 +1,29 @@
 import json
 import pandas
+import pandas as pd
+import numpy as np
+
 
 def generate_datatypes(data_df):
     dataset_fields = data_df.columns.tolist()
     dataset_types = []
     dataset_typelist = []
     labellist = []
+
+    # force d3mIndex to be returned first
+    dataset_typelist.append({'d3mIndex':'int64'})
+    labellist.append('d3mIndex')
+    print('generate datatypes')
     for key in data_df.dtypes.to_dict():
-        columntype = str(data_df.dtypes.to_dict()[key])
-        if columntype == 'object':
-            columntype = "string"
-            #TODO: need to test for integer values here instead of returning float64
-        labellist.append(key)
-        dataset_typelist.append({key: columntype})
+        print(key)
+        if key != 'd3mIndex':
+            columntype = str(data_df.dtypes.to_dict()[key])
+            if columntype == 'object':
+                columntype = "string"
+            labellist.append(key)
+            dataset_typelist.append({key: columntype})
+    print('returning typelist,labels:')
+    print(dataset_typelist,labellist)
     return (dataset_typelist,labellist)
 
 # almost duplicate of the one above, just arranged the output differently for key/value 
@@ -84,7 +95,7 @@ def generate_dynamic_problem_spec(data_df,targetColumnName=None):
     targets = [target]
     
     # data record
-    data = [{'datasetID':"dynamic-dataset-ModSuqad",'targets': targets}]
+    data = [{'datasetID':"dynamic-dataset-ModSquad",'targets': targets}]
     
     # dataSplits record
     dataSplits = {}
@@ -140,7 +151,9 @@ def generateMetadata(dataset_typelist,labels):
             record['colType'] = 'unknown'
             print('found unmapped datatype:',internalType)
 
-        if count == 0:
+        # set the d3mIndex as the index variable, set the last variable as the target
+        # TODO: find a way to pick the target instead of assuming the last column
+        if record['colName'] == 'd3mIndex':
             record['role'] =  ['index']
         elif count == len(labels)-1:
             record['role'] = ['suggestedTarget']
@@ -205,11 +218,18 @@ def writeDatabaseDocFile(path,databaseSpec):
     with open(filename, 'w') as outfile:
         json.dump(databaseSpec, outfile)
 
-
+# It is possible the dataframe does not have a d3mIndex column yet.  
+# If not, add one so TA2 can process the data and it looks like a usual d3m dataset.
 def addIndexColumnIfNeeded(data_df):
-    # doesn't do anything now, might need to add logic to add a d3mIndex column
+    # the reindex call makes d3mIndex the first column in the dataset, which is a d3m convention
+    if 'd3mIndex' not in data_df:
+        data_df['d3mIndex'] = data_df.index
+        data_df = reindex_dataframe_columns(dframe=data_df, columns=['d3mIndex'], new_indices=[0])
+        print('after reindexing:')
+        print(data_df)
     return data_df
 
+#we need to write out the dataset so that TA2 can read it. 
 def writeDatasetContents(path,databaseSpec,data_df):
     filename = path+'/'+databaseSpec['dataResources'][0]['resPath']
     data_df.to_csv(filename)
@@ -237,5 +257,90 @@ def readDatasetDocFile(path):
     with open(filename) as specfile:
         return json.load(specfile)
 
+# helpful function to allow moving any dataframe columns around, 
+# thanks to pandas user @jmwoloso], see https://github.com/pandas-dev/pandas/issues/4588
+#
+## move 'Column_1' to the end, move 'Column_2' to the beginning
+#df = reindex_dataframe_columns(dframe=df,
+#                     columns=['Column_1', 'Column_2'], new_indices=[-1, 0])
 
+def reindex_dataframe_columns(dframe=None, columns=None, new_indices=None):
+    """
+    Reorders the columns of a dataframe as specified by
+    `reorder_indices`. Values of `columns` should align with their
+    respective values in `new_indices`.
+
+    `dframe`: pandas dataframe.
+
+    `columns`: list,pandas.core.index.Index, or numpy array; columns to
+    reindex.
+
+    `reorder_indices`: list of integers or numpy array; indices
+    corresponding to where each column should be inserted during
+    re-indexing.
+    """
+    print("Re-indexing columns.")
+    try:
+        df = dframe.copy()
+
+        # ensure parameters are of correct type and length
+        assert isinstance(columns, (pd.core.index.Index,
+                                    list,
+                                    np.array)),\
+        "`columns` must be of type `pandas.core.index.Index` or `list`"
+
+        assert isinstance(new_indices,
+                          list),\
+        "`reorder_indices` must be of type `list`"
+
+        assert len(columns) == len(new_indices),\
+        "Length of `columns` and `reorder_indices` must be equal"
+
+        # check for negative values in `new_indices`
+        if any(idx < 0 for idx in new_indices):
+
+            # get a list of the negative values
+            negatives = [value for value
+                         in new_indices
+                         if value < 0]
+
+            # find the index location for each negative value in
+            # `new_indices`
+            negative_idx_locations = [new_indices.index(negative)
+                                      for negative in negatives]
+
+            # zip the lists
+            negative_zipped = list(zip(negative_idx_locations,
+                                       negatives))
+
+            # replace the negatives in `new_indices` with their
+            # absolute position in the index
+            for idx, negative in negative_zipped:
+                new_indices[idx] = df.columns.get_loc(df.columns[
+                                                          negative])
+
+        # re-order the index now
+        # get all columns
+        all_columns = df.columns
+
+        # drop the columns that need to be re-indexed
+        all_columns = all_columns.drop(columns)
+
+        # now re-insert them at the specified locations
+        zipped_columns = list(zip(new_indices,
+                                  columns))
+
+        for idx, column in zipped_columns:
+            all_columns = all_columns.insert(idx,
+                                             column)
+        # re-index the dataframe
+        df = df.ix[:, all_columns]
+
+        print("Successfully re-indexed dataframe.")
+
+    except Exception as e:
+        print(e)
+        print("Could not re-index columns. Something went wrong.")
+
+    return df
 
