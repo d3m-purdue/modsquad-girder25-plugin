@@ -107,17 +107,22 @@ class Modsquad(Resource):
 
         # clean up the output filesystem to remove any files from old runs
         try:
-            os.system('rm -rf /output/*')
-            os.mkdir('/output/pipelines')
-            os.mkdir('/output/executables')
-            os.mkdir('/output/exposed_outputs')
-            os.mkdir('/output/temp')
+            #os.system('rm -rf /output/*')
+            os.system('rm -rf /output/modsquad*')
+        except:
+	    print('failed to cleanup directories')
+        try:
+	    print('warning: assuming TA2 output dirs exist already.')
+            #os.mkdir('/output/pipelines')
+            #os.mkdir('/output/executables')
+            #os.mkdir('/output/exposed_outputs')
+            #os.mkdir('/output/temp')
+            #os.mkdir('/output/predictions')
             os.mkdir('/output/modsquad_files')
             os.mkdir('/output/modsquad_files/tables')
             os.mkdir('/output/modsquad_modified_files')
-            os.mkdir('/output/predictions')
         except:
-	    print('failed to cleanup directories')
+	    print('failed to create directories')
             pass
 
         logger.info('received json configuration: %s' % (config))
