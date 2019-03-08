@@ -411,6 +411,23 @@ class Modsquad(Resource):
         print("dynamic problem startup! Exciting!")
         problem_spec = generateSpecs.readProblemSpecFile(dynamic_problem_root)
         dataset_spec = generateSpecs.readDatasetDocFile(dynamic_problem_root)
+
+        # the user has set a target through the UI, this might require an update
+        # of both the dataset spec and the problem spec
+  
+        #print('before:',problem_spec)
+        #print('before:',dataset_spec)
+        generateSpecs.rewriteDatasetWithNewTarget(dynamic_problem_root,dataset_spec,target)
+
+        (problem_spec,dataset_spec) = generateSpecs.updateSpecsForTarget(
+                                              dynamic_problem_root,
+                                              problem_spec,
+                                              dataset_spec,
+                                              target)
+  
+        #print('after:',problem_spec)
+        #print('after:',dataset_spec)
+
         data_uri = dynamic_problem_root+'/datasetDoc.json'
     
         if 'time_limit' not in params:
@@ -726,17 +743,46 @@ class Modsquad(Resource):
       # convert the file contents to a dataframe, so we can return it
       data_file = StringIO.StringIO(resp.text)
       data_df = pd.read_csv(data_file, sep=',')
+
+      # rewind the I/O and pull out the header line to find the original column order in the 
+      # file. TA2 uses column index, so we need to preserve the ordering
+      data_file.seek(0)
+      headerString = data_file.readline()
+      headerString = headerString[:-2]
+      columnNameOrder = headerString.split(',')
+      print(columnNameOrder)
+      # 
       data_df = generateSpecs.addIndexColumnIfNeeded(data_df)
+      #columnNameOrder = generateSpecs.addIndexLabelIfNeeded(columnNameOrder)
       dataset_contents = data_df.to_dict('records')
       dataset_row_count = data_df.shape[0]
       dataset_column_count = data_df.shape[1]
 
       # generate metadata
-      (dataset_typelist,labels) = generateSpecs.generate_datatypes(data_df)
+      #(dataset_typelist,labels) = generateSpecs.generate_datatypes(data_df,columnNameOrder)
+      dataset_fields = data_df.columns.tolist()
+      dataset_types = []
+      dataset_typelist = []
+      labels = []
+
+      # force d3mIndex to be returned first
+      dataset_typelist.append({'d3mIndex':'int64'})
+      labels.append('d3mIndex')
+      print('generate datatypes: (order)',columnNameOrder)
+      #for key in data_df.dtypes.to_dict():
+      for key in columnNameOrder:
+          print(key)
+          if key != 'd3mIndex':
+              columntype = str(data_df.dtypes.to_dict()[key])
+              if columntype == 'object':
+                  columntype = "string"
+              labels.append(key)
+              dataset_typelist.append({key: columntype})
+      print('returning typelist,labels:')
 
       # generate and write out new specs for dataset and problem
-      full_problem_spec = generateSpecs.generate_dynamic_problem_spec(data_df,dataset_typelist)
-      database_spec = generateSpecs.generate_database_spec(full_problem_spec,data_df)
+      full_problem_spec = generateSpecs.generate_dynamic_problem_spec(data_df,columnNameOrder)
+      database_spec = generateSpecs.generate_database_spec(full_problem_spec,data_df,columnNameOrder)
       config_spec = generateSpecs.generateConfig()
       generateSpecs.writeDatabaseDocFile(dynamic_problem_root, database_spec)
       generateSpecs.writeDatasetContents(dynamic_problem_root, database_spec, data_df)
@@ -763,6 +809,11 @@ class Modsquad(Resource):
       #except:
         # return an empty file if there was a problem with the read
         #return retobj
+
+
+
+
+
 
 
     # this endpoint combines two datasets together.  It takes arguments for the two
