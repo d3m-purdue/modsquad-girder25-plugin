@@ -748,7 +748,7 @@ class Modsquad(Resource):
       # file. TA2 uses column index, so we need to preserve the ordering
       data_file.seek(0)
       headerString = data_file.readline()
-      headerString = headerString[:-2]
+      headerString = headerString[:-1]
       columnNameOrder = headerString.split(',')
       print(columnNameOrder)
       # 
