@@ -79,6 +79,7 @@ def generate_dynamic_problem_spec(data_df,columnNameOrder,targetColumnName=None)
         about['taskType'] = 'classification'
     else:
         about['taskType'] = 'regression'   
+        #performanceMetrics = [{'metric': 'meanAbsoluteError'}] 
         performanceMetrics = [{'metric': 'rSquared'}] 
     
     # targets
@@ -327,6 +328,7 @@ def updateSpecsForTarget(dynamic_problem_root,problem_spec,dataset_spec,targetNa
         problem_spec['inputs']['performanceMetrics'] = [{'metric': 'f1Macro'}] 
     else:
         problem_spec['about']['taskType'] = 'regression'   
+        #problem_spec['inputs']['performanceMetrics'] = [{'metric': 'meanAbsoluteError'}] 
         problem_spec['inputs']['performanceMetrics'] = [{'metric': 'rSquared'}] 
    
 
